@@ -82,6 +82,19 @@ const DEFAULT_CONFIG = {
             quota: 3,                 // Weight for quota awareness component
             lru: 0.1                  // Weight for LRU freshness component
         }
+    },
+    // Model Providers configuration
+    providers: {
+        antigravity: {
+            enabled: true
+        },
+        workbuddy: {
+            enabled: true,
+            authDir: '',
+            productJson: '',
+            requestTimeoutMs: 300000,
+            exposeReasoning: false
+        }
     }
 };
 
@@ -129,6 +142,27 @@ function loadConfig() {
 
         // Backward compat: debug implies devMode
         if (config.debug && !config.devMode) config.devMode = true;
+
+        // Providers environment overrides
+        if (!config.providers) {
+            config.providers = { ...DEFAULT_CONFIG.providers };
+        }
+        if (process.env.WORKBUDDY_ENABLED !== undefined) {
+            config.providers.workbuddy = config.providers.workbuddy || {};
+            config.providers.workbuddy.enabled = process.env.WORKBUDDY_ENABLED === 'true';
+        }
+        if (process.env.WORKBUDDY_AUTH_DIR) {
+            config.providers.workbuddy = config.providers.workbuddy || {};
+            config.providers.workbuddy.authDir = process.env.WORKBUDDY_AUTH_DIR;
+        }
+        if (process.env.WORKBUDDY_PRODUCT_JSON) {
+            config.providers.workbuddy = config.providers.workbuddy || {};
+            config.providers.workbuddy.productJson = process.env.WORKBUDDY_PRODUCT_JSON;
+        }
+        if (process.env.WORKBUDDY_REQUEST_TIMEOUT_MS) {
+            config.providers.workbuddy = config.providers.workbuddy || {};
+            config.providers.workbuddy.requestTimeoutMs = parseInt(process.env.WORKBUDDY_REQUEST_TIMEOUT_MS, 10);
+        }
 
     } catch (error) {
         logger.error('[Config] Error loading config:', error);

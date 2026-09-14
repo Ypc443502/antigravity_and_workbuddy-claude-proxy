@@ -11,6 +11,7 @@ window.Components.accountManager = () => ({
     toggling: false,
     deleting: false,
     reloading: false,
+    scanningWorkBuddy: false,
     selectedAccountEmail: '',
     selectedAccountLimits: {},
 
@@ -24,6 +25,62 @@ window.Components.accountManager = () => ({
         }
     },
 
+    openingWorkBuddy: false,
+
+    async openWorkBuddy() {
+        this.openingWorkBuddy = true;
+        try {
+            const store = Alpine.store('global');
+            const { response, newPassword } = await window.utils.request('/api/workbuddy/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }, store.webuiPassword);
+            if (newPassword) store.webuiPassword = newPassword;
+
+            const data = await response.json();
+            if (response.ok && data.status === 'ok') {
+                store.showToast(data.message || 'Opening WorkBuddy...', 'success');
+            } else {
+                store.showToast(data.message || 'WorkBuddy client not found. Please launch it manually.', 'warning', 8000);
+            }
+        } catch (e) {
+            Alpine.store('global').showToast(e.message, 'error');
+        } finally {
+            this.openingWorkBuddy = false;
+        }
+    },
+
+    async scanWorkBuddy() {
+        this.scanningWorkBuddy = true;
+        try {
+            const store = Alpine.store('global');
+            store.showToast('Scanning local WorkBuddy auth files...', 'info');
+            const { response, newPassword } = await window.utils.request('/api/workbuddy/accounts/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }, store.webuiPassword);
+            if (newPassword) store.webuiPassword = newPassword;
+
+            const data = await response.json();
+            if (data.status === 'ok') {
+                const count = data.accounts?.length || 0;
+                if (count > 0) {
+                    store.showToast(`Found ${count} WorkBuddy login(s)`, 'success');
+                } else {
+                    store.showToast('No WorkBuddy login found. Please sign in with the official WorkBuddy desktop app, then click Scan Again.', 'warning', 8000);
+                }
+                await Alpine.store('data').fetchData();
+            } else {
+                throw new Error(data.error || 'Failed to scan WorkBuddy logins');
+            }
+        } catch (e) {
+            Alpine.store('global').showToast(e.message, 'error');
+        } finally {
+            this.scanningWorkBuddy = false;
+        }
+    },
+
     get filteredAccounts() {
         const accounts = Alpine.store('data').accounts || [];
         if (!this.searchQuery || this.searchQuery.trim() === '') {
@@ -32,7 +89,9 @@ window.Components.accountManager = () => ({
 
         const query = this.searchQuery.toLowerCase().trim();
         return accounts.filter(acc => {
-            return acc.email.toLowerCase().includes(query) ||
+            return (acc.email && acc.email.toLowerCase().includes(query)) ||
+                   (acc.nickname && acc.nickname.toLowerCase().includes(query)) ||
+                   (acc.provider && acc.provider.toLowerCase().includes(query)) ||
                    (acc.projectId && acc.projectId.toLowerCase().includes(query)) ||
                    (acc.source && acc.source.toLowerCase().includes(query));
         });
@@ -54,10 +113,18 @@ window.Components.accountManager = () => ({
     async refreshAccount(email) {
         return await window.ErrorHandler.withLoading(async () => {
             const store = Alpine.store('global');
+            const dataStore = Alpine.store('data');
+            const account = (dataStore.accounts || []).find(a => a.email === email);
+            const isWorkBuddy = account?.provider === 'workbuddy';
+
             store.showToast(store.t('refreshingAccount', { email: Redact.email(email) }), 'info');
 
+            const url = isWorkBuddy
+                ? `/api/workbuddy/accounts/${encodeURIComponent(email)}/refresh`
+                : `/api/accounts/${encodeURIComponent(email)}/refresh`;
+
             const { response, newPassword } = await window.utils.request(
-                `/api/accounts/${encodeURIComponent(email)}/refresh`,
+                url,
                 { method: 'POST' },
                 store.webuiPassword
             );
@@ -84,8 +151,13 @@ window.Components.accountManager = () => ({
             account.enabled = enabled;
         }
 
+        const isWorkBuddy = account?.provider === 'workbuddy';
+        const url = isWorkBuddy
+            ? `/api/workbuddy/accounts/${encodeURIComponent(email)}/toggle`
+            : `/api/accounts/${encodeURIComponent(email)}/toggle`;
+
         try {
-            const { response, newPassword } = await window.utils.request(`/api/accounts/${encodeURIComponent(email)}/toggle`, {
+            const { response, newPassword } = await window.utils.request(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled })
@@ -154,9 +226,16 @@ window.Components.accountManager = () => ({
         const email = this.deleteTarget;
         return await window.ErrorHandler.withLoading(async () => {
             const store = Alpine.store('global');
+            const dataStore = Alpine.store('data');
+            const account = (dataStore.accounts || []).find(a => a.email === email);
+            const isWorkBuddy = account?.provider === 'workbuddy';
+
+            const url = isWorkBuddy
+                ? `/api/workbuddy/accounts/${encodeURIComponent(email)}`
+                : `/api/accounts/${encodeURIComponent(email)}`;
 
             const { response, newPassword } = await window.utils.request(
-                `/api/accounts/${encodeURIComponent(email)}`,
+                url,
                 { method: 'DELETE' },
                 store.webuiPassword
             );

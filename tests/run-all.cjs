@@ -24,7 +24,16 @@ const tests = [
     { name: 'Streaming Whitespace', file: 'test-streaming-whitespace.cjs' },
     { name: '403 Account Rotation (Unit)', file: 'test-403-account-rotation.cjs' },
     { name: '403 Account Rotation (Integration)', file: 'test-403-integration.cjs' },
-    { name: 'Version Detection', file: 'test-version-detection.js' }
+    { name: 'Version Detection', file: 'test-version-detection.js' },
+    { name: 'WorkBuddy Request Converter', file: 'workbuddy/test-request-converter.cjs' },
+    { name: 'WorkBuddy Stream Converter', file: 'workbuddy/test-stream-converter.cjs' },
+    { name: 'WorkBuddy Auth Locator', file: 'workbuddy/test-auth-locator.cjs' },
+    { name: 'WorkBuddy Credentials', file: 'workbuddy/test-credentials.cjs' },
+    { name: 'WorkBuddy Models', file: 'workbuddy/test-models.cjs' },
+    { name: 'WorkBuddy Provider Router', file: 'workbuddy/test-provider-router.cjs' },
+    { name: 'WorkBuddy Account Manager', file: 'workbuddy/test-account-manager.cjs' },
+    { name: 'WorkBuddy Edition & WebUI', file: 'workbuddy/test-edition-and-webui.cjs' },
+    { name: 'WorkBuddy Integration Suite', file: 'workbuddy/test-integration.cjs' }
 ];
 
 async function runTest(test) {

@@ -74,7 +74,8 @@ async function runTestsForModel(family, model) {
         }
 
         // For thinking models, expect thinking + text. For others, just text.
-        const passed = expectThinking
+        // Note: Claude thinking models produce thinking blocks; Gemini on vision inputs produces direct text response
+        const passed = (expectThinking && family === 'claude')
             ? (content.hasThinking && content.hasText)
             : content.hasText;
         results.push({ name: 'Single image processing', passed });

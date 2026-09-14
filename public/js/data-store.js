@@ -10,6 +10,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.store('data', {
         accounts: [],
         models: [], // Source of truth
+        groupedModels: { antigravity: [], workbuddy: [] }, // Grouped by provider from /api/models
         modelConfig: {}, // Model metadata (hidden, pinned, alias)
         quotaRows: [], // Filtered view
         usageHistory: {}, // Usage statistics history (from /account-limits?includeHistory=true)
@@ -79,6 +80,7 @@ document.addEventListener('alpine:init', () => {
                     if (data.accounts && data.models) {
                         this.accounts = data.accounts;
                         this.models = data.models;
+                        this.groupedModels = data.groupedModels || { antigravity: [], workbuddy: [] };
                         this.modelConfig = data.modelConfig || {};
                         this.usageHistory = data.usageHistory || {};
 
@@ -98,6 +100,7 @@ document.addEventListener('alpine:init', () => {
                 const cacheData = {
                     accounts: this.accounts,
                     models: this.models,
+                    groupedModels: this.groupedModels,
                     modelConfig: this.modelConfig,
                     usageHistory: this.usageHistory,
                     timestamp: Date.now()
@@ -138,6 +141,9 @@ document.addEventListener('alpine:init', () => {
                     this.usageHistory = data.history;
                 }
 
+                // Fetch grouped models from /api/models (Single Source of Truth)
+                await this.fetchGroupedModels();
+
                 this.saveToCache(); // Save fresh data
 
                 // Re-inject placeholder data if active
@@ -166,6 +172,33 @@ document.addEventListener('alpine:init', () => {
             } finally {
                 this.loading = false;
                 this.initialLoad = false; // Mark initial load as complete
+            }
+        },
+
+        async fetchGroupedModels() {
+            try {
+                const password = Alpine.store('global').webuiPassword;
+                const { response, newPassword } = await window.utils.request('/api/models', {}, password);
+                if (newPassword) Alpine.store('global').webuiPassword = newPassword;
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.groupedModels = {
+                        antigravity: data.antigravity || [],
+                        workbuddy: data.workbuddy || []
+                    };
+                    // Ensure models contains all active model IDs
+                    const allIds = [
+                        ...this.groupedModels.antigravity.map(m => m.id),
+                        ...this.groupedModels.workbuddy.map(m => m.id)
+                    ];
+                    if (allIds.length > 0) {
+                        const set = new Set([...this.models, ...allIds]);
+                        this.models = Array.from(set);
+                    }
+                }
+            } catch (err) {
+                console.error('[DataStore] Failed to fetch grouped models:', err);
             }
         },
 
@@ -387,7 +420,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         getModelFamily(modelId) {
+            if (!modelId) return 'other';
             const lower = modelId.toLowerCase();
+            if (lower.startsWith('workbuddy/') || lower.includes('workbuddy')) return 'workbuddy';
             if (lower.includes('claude')) return 'claude';
             if (lower.includes('gemini')) return 'gemini';
             return 'other';

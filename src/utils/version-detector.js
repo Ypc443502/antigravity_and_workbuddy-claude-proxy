@@ -231,8 +231,8 @@ function getVersionWindows() {
 
         for (const exePath of possiblePaths) {
             if (existsSync(exePath)) {
-                const cmd = `powershell -Command "(Get-Item '${exePath}').VersionInfo.FileVersion"`;
-                const version = execSync(cmd, { encoding: 'utf8' }).trim();
+                const cmd = `powershell -NoProfile -NonInteractive -Command "(Get-Item '${exePath}').VersionInfo.FileVersion"`;
+                const version = execSync(cmd, { encoding: 'utf8', timeout: 3000 }).trim();
                 const match = version.match(/^(\d+\.\d+\.\d+)/);
                 if (match) return match[1];
             }

@@ -205,4 +205,4 @@ setInterval(() => {
             rateLimitStateByAccountModel.delete(key);
         }
     }
-}, 60000);
+}, 60000).unref();

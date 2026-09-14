@@ -12,7 +12,10 @@
  *   mountWebUI(app, __dirname, accountManager);
  */
 
+import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { spawn } from 'child_process';
 import express from 'express';
 import { getPublicConfig, saveConfig, config } from '../config.js';
 import { DEFAULT_PORT, ACCOUNT_CONFIG_PATH, MAX_ACCOUNTS, DEFAULT_PRESETS, DEFAULT_SERVER_PRESETS } from '../constants.js';
@@ -252,7 +255,7 @@ function validateConfigFields(input) {
  * @param {string} dirname - __dirname of the calling module (for static file path)
  * @param {AccountManager} accountManager - Account manager instance
  */
-export function mountWebUI(app, dirname, accountManager) {
+export function mountWebUI(app, dirname, accountManager, providerRouter = null) {
     // Apply auth middleware
     app.use(createAuthMiddleware());
 
@@ -441,6 +444,366 @@ export function mountWebUI(app, dirname, accountManager) {
                 summary: status.summary
             });
         } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    // ==========================================
+    // WorkBuddy Account Management API
+    // ==========================================
+
+    function getWorkBuddyProvider() {
+        if (!providerRouter) {
+            throw new Error('Provider router is not available');
+        }
+        return providerRouter.getProvider('workbuddy');
+    }
+
+    /**
+     * GET /api/workbuddy/accounts - List all WorkBuddy accounts
+     */
+    app.get('/api/workbuddy/accounts', async (req, res) => {
+        try {
+            const wbProvider = getWorkBuddyProvider();
+            const status = wbProvider.getStatus();
+            res.json({
+                status: 'ok',
+                accounts: status.accounts,
+                summary: {
+                    total: status.total,
+                    available: status.available,
+                    rateLimited: status.rateLimited,
+                    invalid: status.invalid,
+                    disabled: status.disabled
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/workbuddy/accounts/scan - Scan local WorkBuddy auth files
+     */
+    app.post('/api/workbuddy/accounts/scan', async (req, res) => {
+        try {
+            const wbProvider = getWorkBuddyProvider();
+            const customDir = req.body?.authDir || null;
+            const scanned = await wbProvider.accountManager.scanAccounts(customDir);
+            res.json({
+                status: 'ok',
+                message: `Found ${scanned.length} WorkBuddy login(s)`,
+                accounts: scanned
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/workbuddy/accounts/:id/refresh - Force refresh WorkBuddy token
+     */
+    app.post('/api/workbuddy/accounts/:id/refresh', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const wbProvider = getWorkBuddyProvider();
+            const summary = await wbProvider.accountManager.refreshAccount(id);
+            res.json({
+                status: 'ok',
+                message: `Token refreshed for ${summary.nickname || id}`,
+                account: summary
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/workbuddy/accounts/:id/toggle - Enable/disable WorkBuddy account
+     */
+    app.post('/api/workbuddy/accounts/:id/toggle', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { enabled } = req.body;
+            if (typeof enabled !== 'boolean') {
+                return res.status(400).json({ status: 'error', error: 'enabled must be a boolean' });
+            }
+
+            const wbProvider = getWorkBuddyProvider();
+            const ok = wbProvider.accountManager.setAccountEnabled(id, enabled);
+            if (!ok) {
+                return res.status(404).json({ status: 'error', error: `Account ${id} not found` });
+            }
+
+            res.json({
+                status: 'ok',
+                message: `Account ${id} ${enabled ? 'enabled' : 'disabled'}`
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * DELETE /api/workbuddy/accounts/:id - Remove WorkBuddy account from proxy
+     */
+    app.delete('/api/workbuddy/accounts/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const wbProvider = getWorkBuddyProvider();
+            const ok = wbProvider.accountManager.removeAccount(id);
+            if (!ok) {
+                return res.status(404).json({ status: 'error', error: `Account ${id} not found` });
+            }
+
+            res.json({
+                status: 'ok',
+                message: `Account ${id} removed from proxy pool (auth file preserved)`
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * Helper to format model ID into a readable display name
+     */
+    function formatModelDisplayName(modelId) {
+        if (!modelId) return '';
+        let clean = modelId;
+        if (clean.startsWith('workbuddy/')) {
+            clean = clean.substring('workbuddy/'.length);
+        } else if (clean.startsWith('antigravity/')) {
+            clean = clean.substring('antigravity/'.length);
+        }
+
+        // Common known patterns
+        if (clean === 'deepseek-v4-pro') return 'DeepSeek V4 Pro';
+        if (clean === 'deepseek-v4-flash') return 'DeepSeek V4 Flash';
+        if (clean === 'glm-5.2') return 'GLM 5.2';
+        if (clean === 'glm-5.1') return 'GLM 5.1';
+        if (clean === 'glm-5v-turbo') return 'GLM 5V Turbo';
+        if (clean === 'kimi-k2.7') return 'Kimi K2.7';
+        if (clean === 'kimi-k2.6') return 'Kimi K2.6';
+        if (clean === 'kimi-k2.5') return 'Kimi K2.5';
+        if (clean === 'minimax-m3-pay') return 'MiniMax M3 Pay';
+        if (clean === 'hy3') return 'Hunyuan 3';
+        if (clean === 'hy3-preview') return 'Hunyuan 3 Preview';
+        if (clean === 'hy3-preview-agent') return 'Hunyuan 3 Preview Agent';
+        if (clean === 'auto') return 'Auto';
+
+        // General capitalization: replace hyphens with spaces and capitalize words
+        return clean
+            .split(/[-_]/)
+            .map(word => {
+                if (/^v\d+/i.test(word)) return word.toUpperCase();
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            })
+            .join(' ');
+    }
+
+    /**
+     * GET /api/models - Get models grouped by provider (Single Source of Truth)
+     */
+    app.get('/api/models', async (req, res) => {
+        try {
+            if (!providerRouter) {
+                return res.status(503).json({ status: 'error', message: 'Provider router not available' });
+            }
+
+            let token = null;
+            try {
+                const { account } = accountManager.selectAccount();
+                if (account) {
+                    token = await accountManager.getTokenForAccount(account);
+                }
+            } catch (_) {}
+
+            const result = await providerRouter.listModels({ token, accountManager });
+            const allModels = result.data || [];
+
+            const antigravity = [];
+            const workbuddy = [];
+
+            for (const item of allModels) {
+                const id = item.id;
+                const isWb = id.startsWith('workbuddy/') || item.owned_by === 'workbuddy';
+
+                if (isWb) {
+                    workbuddy.push({
+                        id: item.id,
+                        upstreamId: item.upstream_id || item.id.replace('workbuddy/', ''),
+                        name: item.name || item.description || formatModelDisplayName(id),
+                        credits: item.credits || 'x1.00',
+                        free: item.free || false,
+                        badges: item.badges || [],
+                        maxInputTokens: item.context_window || 32768,
+                        maxOutputTokens: 4096,
+                        contextWindow: item.context_window || 32768,
+                        supportsImages: !!item.supports_images,
+                        reasoning: item.reasoning || {},
+                        source: item.source || 'remote',
+                        fallback: !!item.fallback,
+                        edition: 'workbuddy-ai'
+                    });
+                } else {
+                    antigravity.push({
+                        id: item.id,
+                        name: item.description || formatModelDisplayName(id)
+                    });
+                }
+            }
+
+            res.json({
+                status: 'ok',
+                antigravity,
+                workbuddy
+            });
+        } catch (error) {
+            logger.error('[WebUI] Error fetching grouped models:', error);
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * GET /api/workbuddy/status - Safe diagnostics endpoint (never exposes tokens)
+     */
+    app.get('/api/workbuddy/status', async (req, res) => {
+        try {
+            const wbProvider = getWorkBuddyProvider();
+            const account = wbProvider.accountManager.accounts[0];
+            if (!account || !account.credentialManager) {
+                return res.json({
+                    status: 'not-configured',
+                    message: 'No WorkBuddy Desktop accounts discovered'
+                });
+            }
+
+            const summary = account.credentialManager.getAccountSummary();
+            const { fetchRemoteWorkBuddyModels } = await import('../providers/workbuddy/models.js');
+            const catalog = await fetchRemoteWorkBuddyModels(account);
+
+            res.json({
+                status: 'ok',
+                edition: summary.edition || 'workbuddy-ai',
+                region: summary.region || 'global',
+                nickname: summary.nickname,
+                maskedUid: summary.uidMasked,
+                domain: summary.domain,
+                authFile: summary.sourceFile,
+                accessExpiresAt: summary.tokenExpiresAt,
+                refreshExpiresAt: summary.refreshExpiresAt,
+                accessExpired: summary.isExpired,
+                isUsable: summary.isUsable,
+                catalogSource: catalog.source,
+                catalogFallback: !!catalog.fallback,
+                catalogFetchedAt: new Date(catalog.timestamp || Date.now()).toISOString(),
+                modelCount: catalog.models?.length || 0
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * GET /api/workbuddy/models - Public model metadata
+     */
+    app.get('/api/workbuddy/models', async (req, res) => {
+        try {
+            const wbProvider = getWorkBuddyProvider();
+            const account = wbProvider.accountManager.accounts[0];
+            const { fetchRemoteWorkBuddyModels } = await import('../providers/workbuddy/models.js');
+            const catalog = await fetchRemoteWorkBuddyModels(account);
+
+            res.json({
+                status: 'ok',
+                source: catalog.source,
+                fallback: !!catalog.fallback,
+                models: catalog.models
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/workbuddy/models/refresh - Force reload dynamic models from /v3/config
+     */
+    app.post('/api/workbuddy/models/refresh', async (req, res) => {
+        try {
+            const wbProvider = getWorkBuddyProvider();
+            const account = wbProvider.accountManager.accounts[0];
+            const { fetchRemoteWorkBuddyModels } = await import('../providers/workbuddy/models.js');
+            const catalog = await fetchRemoteWorkBuddyModels(account, { forceRefresh: true });
+
+            res.json({
+                status: 'ok',
+                message: `Refreshed ${catalog.models?.length || 0} models from upstream`,
+                source: catalog.source,
+                fallback: !!catalog.fallback,
+                models: catalog.models
+            });
+        } catch (error) {
+            res.status(500).json({ status: 'error', error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/workbuddy/open - Try to launch local WorkBuddy desktop app
+     */
+    app.post('/api/workbuddy/open', async (req, res) => {
+        try {
+            const platform = process.platform;
+            const candidates = [];
+            if (platform === 'win32') {
+                const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+                const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+                const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+                candidates.push(path.join(localAppData, 'Programs', 'WorkBuddy', 'WorkBuddy.exe'));
+                candidates.push(path.join(localAppData, 'Programs', 'CodeBuddy', 'CodeBuddy.exe'));
+                candidates.push(path.join(programFiles, 'WorkBuddy', 'WorkBuddy.exe'));
+                candidates.push(path.join(programFiles, 'CodeBuddy', 'CodeBuddy.exe'));
+                candidates.push(path.join(programFilesX86, 'WorkBuddy', 'WorkBuddy.exe'));
+                candidates.push(path.join(programFilesX86, 'CodeBuddy', 'CodeBuddy.exe'));
+            } else if (platform === 'darwin') {
+                candidates.push('/Applications/WorkBuddy.app');
+                candidates.push('/Applications/CodeBuddy.app');
+            } else {
+                candidates.push('/opt/WorkBuddy/workbuddy');
+                candidates.push('/opt/CodeBuddy/codebuddy');
+                candidates.push('/usr/local/bin/workbuddy');
+            }
+
+            let foundPath = null;
+            for (const p of candidates) {
+                if (fs.existsSync(p)) {
+                    foundPath = p;
+                    break;
+                }
+            }
+
+            if (!foundPath) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: '未在系统默认路径中找到 WorkBuddy 客户端，请手动在系统中打开。'
+                });
+            }
+
+            if (platform === 'darwin') {
+                spawn('open', [foundPath], { detached: true, stdio: 'ignore' }).unref();
+            } else if (platform === 'win32') {
+                spawn(foundPath, [], { detached: true, stdio: 'ignore' }).unref();
+            } else {
+                spawn(foundPath, [], { detached: true, stdio: 'ignore' }).unref();
+            }
+
+            logger.info(`[WebUI] Launching WorkBuddy client from: ${foundPath}`);
+            res.json({
+                status: 'ok',
+                message: `已请求打开 ${path.basename(foundPath)}`
+            });
+        } catch (error) {
+            logger.error('[WebUI] Error opening WorkBuddy desktop app:', error);
             res.status(500).json({ status: 'error', error: error.message });
         }
     });

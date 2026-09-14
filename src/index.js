@@ -158,6 +158,23 @@ ${environmentSection}
     }
 });
 
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        logger.error(`\n[Server] 端口 ${PORT} 已被占用 (EADDRINUSE)。`);
+        logger.warn(`当前端口已被一个运行中的代理服务进程占用。`);
+        logger.info(`解决方案：`);
+        logger.info(`  1. 重启代理加载新代码：`);
+        logger.info(`     node bin/cli.js restart`);
+        logger.info(`  2. 或停止后台运行的代理实例：`);
+        logger.info(`     node bin/cli.js stop`);
+        logger.info(`  3. 或使用其他端口运行：`);
+        logger.info(`     $env:PORT=8081; npm start\n`);
+        process.exit(1);
+    }
+    logger.error('[Server] Server listen error:', err);
+    process.exit(1);
+});
+
 // Graceful shutdown
 const shutdown = () => {
     logger.info('Shutting down server...');

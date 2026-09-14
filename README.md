@@ -30,23 +30,29 @@ A proxy server that exposes an **Anthropic-compatible API** backed by **Antigrav
 ## How It Works
 
 ```
-┌──────────────────┐     ┌─────────────────────┐     ┌────────────────────────────┐
-│   Claude Code    │────▶│  This Proxy Server  │────▶│  Antigravity Cloud Code    │
-│   (Anthropic     │     │  (Anthropic → Google│     │  (daily-cloudcode-pa.      │
-│    API format)   │     │   Generative AI)    │     │   sandbox.googleapis.com)  │
-└──────────────────┘     └─────────────────────┘     └────────────────────────────┘
+                                                     ┌────────────────────────────┐
+                                              ┌─────▶│  Antigravity Cloud Code    │
+                                              │      │  (Google Cloud Code API)   │
+┌──────────────────┐     ┌─────────────────┐  │      └────────────────────────────┘
+│   Claude Code    │────▶│ Provider Router │──┤
+│   (Anthropic     │     │  (This Proxy    │  │      ┌────────────────────────────┐
+│    Messages API) │     │   Server :8080) │  └─────▶│  WorkBuddy Copilot         │
+└──────────────────┘     └─────────────────┘         │  (copilot.tencent.com)     │
+                                                     └────────────────────────────┘
 ```
 
-1. Receives requests in **Anthropic Messages API format**
-2. Uses OAuth tokens from added Google accounts (or Antigravity's local database)
-3. Transforms to **Google Generative AI format** with Cloud Code wrapping
-4. Sends to Antigravity's Cloud Code API
-5. Converts responses back to **Anthropic format** with full thinking/streaming support
+1. Receives requests in **Anthropic Messages API format** (`/v1/messages`)
+2. **Provider Router** resolves models by prefix:
+   - `workbuddy/*` (e.g. `workbuddy/deepseek-v4-pro`, `workbuddy/glm-5.2`) → **WorkBuddy Provider**
+   - `antigravity/*` or unprefixed (e.g. `claude-sonnet-4-6`, `gemini-3.1-pro-high`) → **Antigravity Provider** (100% backward compatible)
+3. For **Antigravity**: Transforms to Google Cloud Code Generative AI format and manages Google multi-account quotas
+4. For **WorkBuddy**: Transforms Anthropic messages and tool calls to native OpenAI Chat Completions, connects to `copilot.tencent.com`, streams SSE, and converts back to Anthropic event stream
+5. Automatic token refresh 60s before expiry with atomic write-back, 401 retry, and 429 rate limit failover
 
 ## Prerequisites
 
 - **Node.js** 18 or later
-- **Antigravity** installed (for single-account mode) OR Google account(s) for multi-account mode
+- **Antigravity** installed / Google account(s) OR **WorkBuddy / CodeBuddy** logged in locally
 
 ---
 
@@ -189,6 +195,41 @@ Add this configuration:
     "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
   }
 }
+```
+
+#### **Using with WorkBuddy Models (DeepSeek, GLM, Kimi)**
+
+To use WorkBuddy models with Claude Code CLI, configure your `%USERPROFILE%\.claude\settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
+    "ANTHROPIC_AUTH_TOKEN": "test",
+
+    "ANTHROPIC_MODEL": "workbuddy/deepseek-v4-pro",
+
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "workbuddy/deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "workbuddy/deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "workbuddy/deepseek-v4-flash",
+
+    "CLAUDE_CODE_SUBAGENT_MODEL": "workbuddy/deepseek-v4-pro"
+  }
+}
+```
+
+Or set in your PowerShell session:
+
+```powershell
+$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
+$env:ANTHROPIC_AUTH_TOKEN="test"
+$env:ANTHROPIC_MODEL="workbuddy/deepseek-v4-pro"
+$env:ANTHROPIC_DEFAULT_OPUS_MODEL="workbuddy/deepseek-v4-pro"
+$env:ANTHROPIC_DEFAULT_SONNET_MODEL="workbuddy/deepseek-v4-pro"
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL="workbuddy/deepseek-v4-flash"
+$env:CLAUDE_CODE_SUBAGENT_MODEL="workbuddy/deepseek-v4-pro"
+
+claude
 ```
 
 Or to use Gemini models:

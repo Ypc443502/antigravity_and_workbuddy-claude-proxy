@@ -11,6 +11,7 @@ window.Components.claudeConfig = () => ({
     loading: false,
     restoring: false,
     gemini1mSuffix: false,
+    selectedProvider: 'antigravity', // 'antigravity' or 'workbuddy'
 
     // Mode toggle state (proxy/paid)
     currentMode: 'proxy', // 'proxy' or 'paid'
@@ -102,6 +103,73 @@ window.Components.claudeConfig = () => ({
     },
 
     /**
+     * Get available models for the currently selected provider
+     * @returns {string[]} Model IDs
+     */
+    getAvailableModels() {
+        const dataStore = Alpine.store('data');
+        if (this.selectedProvider === 'workbuddy') {
+            const fromGrouped = dataStore.groupedModels?.workbuddy?.map(m => m.id);
+            if (fromGrouped && fromGrouped.length > 0) return fromGrouped;
+            return (dataStore.models || []).filter(m => m.startsWith('workbuddy/'));
+        } else {
+            const fromGrouped = dataStore.groupedModels?.antigravity?.map(m => m.id);
+            if (fromGrouped && fromGrouped.length > 0) return fromGrouped;
+            return (dataStore.models || []).filter(m => !m.startsWith('workbuddy/'));
+        }
+    },
+
+    /**
+     * Switch active provider between Antigravity and WorkBuddy
+     * @param {'antigravity'|'workbuddy'} newProvider
+     */
+    switchProvider(newProvider) {
+        if (this.selectedProvider === newProvider) return;
+        this.selectedProvider = newProvider;
+
+        const dataStore = Alpine.store('data');
+        const wbModels = dataStore.groupedModels?.workbuddy?.map(m => m.id) ||
+            (dataStore.models || []).filter(m => m.startsWith('workbuddy/'));
+        const agModels = dataStore.groupedModels?.antigravity?.map(m => m.id) ||
+            (dataStore.models || []).filter(m => !m.startsWith('workbuddy/'));
+
+        if (newProvider === 'workbuddy') {
+            // Helper to pick exact target or keyword fallback from actual catalog
+            const findModel = (target, fallbacks = []) => {
+                if (wbModels.includes(target)) return target;
+                for (const fb of fallbacks) {
+                    const match = wbModels.find(m => m.toLowerCase().includes(fb.toLowerCase()));
+                    if (match) return match;
+                }
+                return wbModels[0] || target;
+            };
+
+            const defModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm', 'kimi']);
+            const opusModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm']);
+            const sonnetModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm']);
+            const haikuModel = findModel('workbuddy/deepseek-v4-flash', ['flash', 'glm-5v', 'turbo']);
+            const subagentModel = findModel('workbuddy/hy3-preview-agent', ['agent', 'deepseek', 'glm']);
+
+            this.config.env.ANTHROPIC_MODEL = defModel;
+            this.config.env.ANTHROPIC_DEFAULT_OPUS_MODEL = opusModel;
+            this.config.env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnetModel;
+            this.config.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haikuModel;
+            this.config.env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
+        } else {
+            // Switching to Antigravity
+            const isCurrentWb = (this.config.env.ANTHROPIC_MODEL || '').startsWith('workbuddy/');
+            if (isCurrentWb) {
+                const pickAg = (target, fallback) => agModels.includes(target) ? target : (agModels[0] || fallback);
+                this.config.env.ANTHROPIC_MODEL = pickAg('claude-opus-4-6-thinking', 'claude-sonnet-4-6');
+                this.config.env.ANTHROPIC_DEFAULT_OPUS_MODEL = pickAg('claude-opus-4-6-thinking', 'claude-sonnet-4-6');
+                this.config.env.ANTHROPIC_DEFAULT_SONNET_MODEL = pickAg('claude-sonnet-4-6', 'claude-sonnet-4-6');
+                this.config.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = pickAg('claude-sonnet-4-6', 'claude-sonnet-4-6');
+                this.config.env.CLAUDE_CODE_SUBAGENT_MODEL = pickAg('claude-sonnet-4-6', 'claude-sonnet-4-6');
+            }
+        }
+    },
+
+    /**
      * Helper to select a model from the dropdown
      * @param {string} field - The config.env field to update
      * @param {string} modelId - The selected model ID
@@ -118,6 +186,13 @@ window.Components.claudeConfig = () => ({
         }
 
         this.config.env[field] = finalModelId;
+
+        // Automatically sync selectedProvider if user picked a model with workbuddy prefix
+        if (modelId.startsWith('workbuddy/')) {
+            this.selectedProvider = 'workbuddy';
+        } else if (modelId) {
+            this.selectedProvider = 'antigravity';
+        }
     },
 
     async fetchConfig() {
@@ -135,6 +210,14 @@ window.Components.claudeConfig = () => ({
             // Default MCP CLI to true if not set
             if (this.config.env.ENABLE_EXPERIMENTAL_MCP_CLI === undefined) {
                 this.config.env.ENABLE_EXPERIMENTAL_MCP_CLI = 'true';
+            }
+
+            // Sync selectedProvider based on ANTHROPIC_MODEL
+            const primary = this.config.env.ANTHROPIC_MODEL || '';
+            if (primary.startsWith('workbuddy/')) {
+                this.selectedProvider = 'workbuddy';
+            } else {
+                this.selectedProvider = 'antigravity';
             }
 
             // Detect existing [1m] suffix state, default to true

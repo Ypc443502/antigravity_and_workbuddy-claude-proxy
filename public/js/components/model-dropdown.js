@@ -34,19 +34,55 @@ window.Components.modelDropdown = (field, labelKey, accentColor) => ({
     },
 
     get filteredModels() {
-        const models = this.$store.data.models || [];
-        if (!this.searchTerm) return models;
+        const baseModels = (typeof this.getAvailableModels === 'function')
+            ? this.getAvailableModels()
+            : (this.$store.data.models || []);
+        if (!this.searchTerm) return baseModels;
         const term = this.searchTerm.toLowerCase();
-        return models.filter(m => m.toLowerCase().includes(term));
+        return baseModels.filter(m => m.toLowerCase().includes(term));
     },
 
     get groupedModels() {
+        const models = this.filteredModels;
+        const isWbMode = models.some(m => m.startsWith('workbuddy/'));
+
+        if (isWbMode) {
+            const wbGroups = [
+                { family: 'gpt', label: 'GPT Series', items: [] },
+                { family: 'hunyuan', label: 'Hy / Hunyuan (混元)', items: [] },
+                { family: 'deepseek', label: 'DeepSeek', items: [] },
+                { family: 'glm', label: 'GLM / Zhipu', items: [] },
+                { family: 'kimi', label: 'Kimi / Moonshot', items: [] },
+                { family: 'minimax', label: 'MiniMax', items: [] },
+                { family: 'other', label: 'Other Models', items: [] }
+            ];
+            for (const modelId of models) {
+                const lower = modelId.toLowerCase();
+                if (lower.includes('gpt')) {
+                    wbGroups[0].items.push(modelId);
+                } else if (lower.includes('hy3') || lower.includes('hy4') || lower.includes('hunyuan')) {
+                    wbGroups[1].items.push(modelId);
+                } else if (lower.includes('deepseek')) {
+                    wbGroups[2].items.push(modelId);
+                } else if (lower.includes('glm')) {
+                    wbGroups[3].items.push(modelId);
+                } else if (lower.includes('kimi')) {
+                    wbGroups[4].items.push(modelId);
+                } else if (lower.includes('minimax')) {
+                    wbGroups[5].items.push(modelId);
+                } else {
+                    wbGroups[6].items.push(modelId);
+                }
+            }
+            return wbGroups.filter(g => g.items.length > 0);
+        }
+
         const groups = [
             { family: 'claude', label: this.$store.global.t('familyClaude'), items: [] },
             { family: 'gemini', label: this.$store.global.t('familyGemini'), items: [] },
             { family: 'other', label: this.$store.global.t('familyOther'), items: [] }
         ];
-        for (const modelId of this.filteredModels) {
+        for (const modelId of models) {
             const fam = this.$store.data.getModelFamily(modelId);
             const group = groups.find(g => g.family === fam) || groups[2];
             group.items.push(modelId);

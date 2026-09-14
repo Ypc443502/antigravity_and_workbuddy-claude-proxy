@@ -727,15 +727,22 @@ async function runTests() {
     });
 
     test('HybridStrategy: consumes token on selection', () => {
-        const strategy = new HybridStrategy({
-            healthScore: { initial: 70 },
-            tokenBucket: { initialTokens: 10, maxTokens: 50 }
-        });
-        const accounts = createMockAccounts(1);
+        const realDateNow = Date.now;
+        const frozenTime = 1700000000000;
+        Date.now = () => frozenTime;
+        try {
+            const strategy = new HybridStrategy({
+                healthScore: { initial: 70 },
+                tokenBucket: { initialTokens: 10, maxTokens: 50 }
+            });
+            const accounts = createMockAccounts(1);
 
-        strategy.selectAccount(accounts, 'model');
-        const tracker = strategy.getTokenBucketTracker();
-        assertEqual(tracker.getTokens(accounts[0].email), 9, 'Token should be consumed');
+            strategy.selectAccount(accounts, 'model');
+            const tracker = strategy.getTokenBucketTracker();
+            assertEqual(tracker.getTokens(accounts[0].email), 9, 'Token should be consumed');
+        } finally {
+            Date.now = realDateNow;
+        }
     });
 
     test('HybridStrategy: onSuccess increases health', () => {

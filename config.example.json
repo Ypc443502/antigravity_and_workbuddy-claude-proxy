@@ -36,6 +36,20 @@
   "maxAccounts": 10,
   "_maxAccounts_comment": "Maximum number of Google accounts allowed (1-100). Default: 10.",
 
+  "providers": {
+    "antigravity": {
+      "enabled": true
+    },
+    "workbuddy": {
+      "enabled": true,
+      "authDir": "",
+      "productJson": "",
+      "requestTimeoutMs": 300000,
+      "exposeReasoning": false
+    }
+  },
+  "_providers_comment": "Multi-provider configuration for Antigravity (Google Cloud Code) and WorkBuddy (Tencent Copilot). Env vars: WORKBUDDY_ENABLED, WORKBUDDY_AUTH_DIR, WORKBUDDY_PRODUCT_JSON, WORKBUDDY_REQUEST_TIMEOUT_MS.",
+
   "_oauthCallbackPort_comment": "OAuth callback server port. Change if you get EACCES errors on Windows. Can also use OAUTH_CALLBACK_PORT env var. Default: 51121.",
   "_oauthCallbackPort_env": "OAUTH_CALLBACK_PORT=3456",
 

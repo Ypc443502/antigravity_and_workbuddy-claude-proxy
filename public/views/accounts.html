@@ -77,7 +77,31 @@
                 </svg>
                 <span x-text="$store.global.t('addAccount')">Add Account</span>
             </button>
+            <button class="btn bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-300 border border-cyan-700/50 btn-xs gap-2 shadow-lg shadow-cyan-900/20 h-8"
+                @click="scanWorkBuddy()"
+                :disabled="scanningWorkBuddy"
+                title="Scan Local WorkBuddy Login">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" :class="{ 'animate-spin': scanningWorkBuddy }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span>Scan Local WorkBuddy</span>
+            </button>
+            <button class="btn btn-outline border-space-border hover:border-cyan-700/50 text-gray-400 hover:text-cyan-300 btn-xs gap-2 h-8"
+                @click="openWorkBuddy()"
+                :disabled="openingWorkBuddy"
+                title="Open WorkBuddy Desktop App">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" :class="{ 'animate-spin': openingWorkBuddy }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                <span>Open WorkBuddy</span>
+            </button>
         </div>
+    </div>
+
+    <!-- Helpful notice banner -->
+    <div class="flex items-center gap-2 mb-4 px-3.5 py-2 rounded-lg bg-space-900/40 border border-space-border/40 text-[11px] text-gray-400">
+        <span class="text-neon-cyan font-bold">💡 提示：</span>
+        <span>请先在 WorkBuddy / CodeBuddy 官方客户端中完成登录，然后点击 “Scan Local WorkBuddy”。本代理不会要求您在网页中输入账号密码。</span>
     </div>
 
     <!-- Table Card -->
@@ -140,28 +164,61 @@
                             </label>
                         </td>
                         <td class="py-4">
-                            <div class="tooltip tooltip-right" :data-tip="Redact.email(acc.email)">
-                                <span class="font-mono text-sm text-gray-300 truncate max-w-[320px] inline-block cursor-help group-hover:text-white transition-colors"
-                                      x-text="formatEmail(Redact.email(acc.email))">
-                                </span>
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-1.5">
+                                    <template x-if="acc.provider === 'workbuddy'">
+                                        <span class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                                              :class="{
+                                                  'bg-cyan-900/60 text-cyan-300 border border-cyan-700/50': acc.edition === 'workbuddy-ai',
+                                                  'bg-teal-900/60 text-teal-300 border border-teal-700/50': acc.edition === 'codebuddy-cn',
+                                                  'bg-sky-900/60 text-sky-300 border border-sky-700/50': acc.edition === 'tencent-cloud',
+                                                  'bg-cyan-900/60 text-cyan-300 border border-cyan-700/50': !['workbuddy-ai', 'codebuddy-cn', 'tencent-cloud'].includes(acc.edition)
+                                              }"
+                                              x-text="acc.editionLabel || 'WORKBUDDY'">
+                                        </span>
+                                    </template>
+                                    <template x-if="acc.provider !== 'workbuddy'">
+                                        <span class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0 bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                                            ANTIGRAVITY
+                                        </span>
+                                    </template>
+                                    <div class="tooltip tooltip-right truncate" :data-tip="acc.provider === 'workbuddy' ? (acc.nickname ? acc.nickname + ' (' + acc.email + ')' : acc.email) : Redact.email(acc.email)">
+                                        <span class="font-mono text-sm text-gray-300 truncate max-w-[280px] inline-block cursor-help group-hover:text-white transition-colors"
+                                              x-text="acc.provider === 'workbuddy' ? (acc.nickname || acc.email) : formatEmail(Redact.email(acc.email))">
+                                        </span>
+                                    </div>
+                                </div>
+                                <template x-if="acc.provider === 'workbuddy'">
+                                    <div class="text-[10px] text-gray-500 font-mono flex items-center gap-2 pl-0.5">
+                                        <span x-text="'UID: ' + (acc.uidMasked || acc.uid)"></span>
+                                        <span>•</span>
+                                        <span x-text="acc.domain"></span>
+                                        <span x-show="acc.sourceFile">•</span>
+                                        <span x-show="acc.sourceFile" class="text-gray-400 hover:text-gray-200 cursor-help" x-text="acc.sourceFile" :title="acc.authFilePath"></span>
+                                    </div>
+                                </template>
                             </div>
                         </td>
                         <td class="py-4">
-                            <span :class="acc.source === 'oauth' ? 'status-pill-purple' : 'status-pill-free'"
-                                  x-text="acc.source || 'oauth'">
+                            <span :class="acc.provider === 'workbuddy' ? 'status-pill-cyan' : (acc.source === 'oauth' ? 'status-pill-purple' : 'status-pill-free')"
+                                  x-text="acc.provider === 'workbuddy' ? 'local' : (acc.source || 'oauth')">
                             </span>
                         </td>
                         <td class="py-4">
                             <span :class="{
                                       'status-pill-ultra': acc.subscription?.tier === 'ultra',
                                       'status-pill-pro': acc.subscription?.tier === 'pro',
-                                      'status-pill-free': !acc.subscription || acc.subscription.tier === 'free' || acc.subscription.tier === 'unknown'
+                                      'status-pill-free': acc.provider !== 'workbuddy' && (!acc.subscription || acc.subscription.tier === 'free' || acc.subscription.tier === 'unknown'),
+                                      'status-pill-cyan': acc.provider === 'workbuddy'
                                   }"
-                                  x-text="(acc.subscription?.tier || 'free').toUpperCase()">
+                                  x-text="acc.provider === 'workbuddy' ? 'WB' : (acc.subscription?.tier || 'free').toUpperCase()">
                             </span>
                         </td>
-                        <td class="py-4 cursor-pointer" @click="openQuotaModal(acc)">
-                            <div x-data="{ quota: getMainModelQuota(acc) }">
+                        <td class="py-4" :class="acc.provider !== 'workbuddy' ? 'cursor-pointer' : ''" @click="acc.provider !== 'workbuddy' && openQuotaModal(acc)">
+                            <template x-if="acc.provider === 'workbuddy' || acc.quotaSupported === false">
+                                <span class="text-xs font-mono text-gray-400">N/A</span>
+                            </template>
+                            <div x-show="acc.provider !== 'workbuddy' && acc.quotaSupported !== false" x-data="{ quota: getMainModelQuota(acc) }">
                                 <template x-if="quota.percent !== null">
                                     <div class="flex items-center gap-2">
                                         <div class="w-16 bg-gray-700 rounded-full h-2 overflow-hidden">
@@ -187,41 +244,67 @@
                         </td>
                         <td class="py-4">
                             <div class="flex items-center gap-2">
-                                <div class="w-2 h-2 rounded-full flex-shrink-0"
-                                     :class="acc.status === 'ok' ?
-                                             'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
-                                             (acc.status === 'banned' ? 
-                                              'bg-red-800 shadow-[0_0_8px_rgba(153,27,27,0.6)]' :
-                                              'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]')">
-                                </div>
-                                <span class="text-xs font-mono font-semibold"
-                                      :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-800' : 'text-red-400')"
-                                      x-text="acc.status.toUpperCase()">
-                                </span>
-                                <p x-show="acc.status === 'banned'" 
-                                   class="text-[9px] text-red-600/70 mt-0.5 max-w-[200px] leading-tight"
-                                   x-text="acc.error || 'Gemini disabled for ToS violation'">
-                                </p>
+                                <template x-if="acc.provider === 'workbuddy'">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                             :class="{
+                                                 'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse': acc.status === 'valid' || acc.status === 'ok',
+                                                 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]': acc.status === 'reauth-required',
+                                                 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]': acc.status === 'rate-limited',
+                                                 'bg-gray-500': acc.status === 'disabled'
+                                             }">
+                                        </div>
+                                        <span class="text-xs font-mono font-semibold uppercase"
+                                              :class="{
+                                                  'text-neon-green': acc.status === 'valid' || acc.status === 'ok',
+                                                  'text-yellow-400': acc.status === 'reauth-required',
+                                                  'text-red-400': acc.status === 'rate-limited',
+                                                  'text-gray-400': acc.status === 'disabled'
+                                              }"
+                                              x-text="acc.status === 'reauth-required' ? 'REAUTH REQUIRED' : acc.status.toUpperCase()">
+                                        </span>
+                                    </div>
+                                </template>
+                                <template x-if="acc.provider !== 'workbuddy'">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-2 h-2 rounded-full flex-shrink-0"
+                                             :class="acc.status === 'ok' ?
+                                                     'bg-neon-green shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' :
+                                                     (acc.status === 'banned' ?
+                                                      'bg-red-800 shadow-[0_0_8px_rgba(153,27,27,0.6)]' :
+                                                      'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]')">
+                                        </div>
+                                        <span class="text-xs font-mono font-semibold"
+                                              :class="acc.status === 'ok' ? 'text-neon-green' : (acc.status === 'banned' ? 'text-red-800' : 'text-red-400')"
+                                              x-text="acc.status.toUpperCase()">
+                                        </span>
+                                        <p x-show="acc.status === 'banned'"
+                                           class="text-[9px] text-red-600/70 mt-0.5 max-w-[200px] leading-tight"
+                                           x-text="acc.error || 'Gemini disabled for ToS violation'">
+                                        </p>
+                                    </div>
+                                </template>
                             </div>
                         </td>
                         <td class="py-4 pr-6">
                             <div class="flex justify-end gap-2">
-                                <!-- Fix Button -->
-                                <button x-show="acc.status === 'invalid'"
+                                <!-- Fix Button (Antigravity only) -->
+                                <button x-show="acc.status === 'invalid' && acc.provider !== 'workbuddy'"
                                     class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 transition-all"
                                     @click="fixAccount(acc.email)"
                                     x-text="$store.global.t('fix')">
                                     FIX
                                 </button>
                                 <!-- Appeal Button (banned accounts only) -->
-                                <a x-show="acc.status === 'banned'"
+                                <a x-show="acc.status === 'banned' && acc.provider !== 'workbuddy'"
                                    href="mailto:gemini-code-assist-user-feedback@google.com"
                                    class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-red-900/20 text-red-400 hover:bg-red-900/30 border border-red-800/30 hover:border-red-800/50 transition-all"
                                    title="Email Google to appeal this ban">
                                    APPEAL
                                 </a>
-                                <!-- Settings Button (threshold) -->
-                                <button class="p-2 rounded hover:bg-white/10 text-gray-500 hover:text-neon-yellow transition-colors"
+                                <!-- Settings Button (threshold, Antigravity only) -->
+                                <button x-show="acc.provider !== 'workbuddy'"
+                                    class="p-2 rounded hover:bg-white/10 text-gray-500 hover:text-neon-yellow transition-colors"
                                     @click="openThresholdModal(acc)"
                                     title="Account Settings">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

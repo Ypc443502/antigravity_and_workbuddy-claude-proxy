@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { sendMessage, sendMessageStream, listModels, getModelQuotas, getSubscriptionTier, isValidModel } from './cloudcode/index.js';
 import { mountWebUI } from './webui/index.js';
 import { config } from './config.js';
+import { providerRouter, ProviderError } from './providers/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,7 +51,7 @@ let initError = null;
 let initPromise = null;
 
 /**
- * Ensure account manager is initialized (with race condition protection)
+ * Ensure account manager and providers are initialized (with race condition protection)
  */
 async function ensureInitialized() {
     if (isInitialized) return;
@@ -59,17 +60,28 @@ async function ensureInitialized() {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
+        // Initialize Antigravity account manager
         try {
             await accountManager.initialize(STRATEGY_OVERRIDE);
-            isInitialized = true;
             const status = accountManager.getStatus();
-            logger.success(`[Server] Account pool initialized: ${status.summary}`);
+            logger.success(`[Server] Antigravity account pool initialized: ${status.summary}`);
         } catch (error) {
-            initError = error;
-            initPromise = null; // Allow retry on failure
-            logger.error('[Server] Failed to initialize account manager:', error.message);
-            throw error;
+            logger.warn('[Server] Antigravity initialization notice:', error.message);
         }
+
+        // Initialize WorkBuddy provider
+        try {
+            const wbProvider = providerRouter.getProvider('workbuddy');
+            if (wbProvider && typeof wbProvider.initialize === 'function') {
+                await wbProvider.initialize();
+                const wbStatus = wbProvider.getStatus();
+                logger.success(`[Server] WorkBuddy account pool initialized: ${wbStatus.summary}`);
+            }
+        } catch (error) {
+            logger.warn('[Server] WorkBuddy initialization notice:', error.message);
+        }
+
+        isInitialized = true;
     })();
 
     return initPromise;
@@ -131,12 +143,78 @@ app.use((req, res, next) => {
 });
 
 // Mount WebUI (optional web interface for account management)
-mountWebUI(app, __dirname, accountManager);
+mountWebUI(app, __dirname, accountManager, providerRouter);
+
+/**
+ * Estimated token count (conservative estimation for Anthropic API compatibility)
+ */
+function estimateTokens(body) {
+    if (!body || typeof body !== 'object') return 1;
+
+    let totalChars = 0;
+    let messageCount = 0;
+
+    // 1. System prompt
+    if (typeof body.system === 'string') {
+        totalChars += body.system.length;
+    } else if (Array.isArray(body.system)) {
+        for (const b of body.system) {
+            if (typeof b === 'string') totalChars += b.length;
+            else if (b && b.text) totalChars += b.text.length;
+        }
+    }
+
+    // 2. Messages
+    if (Array.isArray(body.messages)) {
+        messageCount += body.messages.length;
+        for (const msg of body.messages) {
+            if (typeof msg.content === 'string') {
+                totalChars += msg.content.length;
+            } else if (Array.isArray(msg.content)) {
+                for (const block of msg.content) {
+                    if (typeof block === 'string') {
+                        totalChars += block.length;
+                    } else if (block.type === 'text' && block.text) {
+                        totalChars += block.text.length;
+                    } else if (block.type === 'tool_use') {
+                        totalChars += (block.name || '').length;
+                        totalChars += JSON.stringify(block.input || {}).length;
+                    } else if (block.type === 'tool_result') {
+                        if (typeof block.content === 'string') {
+                            totalChars += block.content.length;
+                        } else {
+                            totalChars += JSON.stringify(block.content || '').length;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Tools
+    if (Array.isArray(body.tools)) {
+        for (const tool of body.tools) {
+            totalChars += JSON.stringify(tool).length;
+        }
+    }
+
+    // Conservative estimation: ~4 chars per token + message/tool overhead
+    const estimated = Math.ceil(totalChars / 4) + (messageCount * 4) + 10;
+    return Math.max(1, estimated);
+}
 
 /**
  * Parse error message to extract error type, status code, and user-friendly message
  */
 function parseError(error) {
+    if (error instanceof ProviderError || error?.provider) {
+        return {
+            errorType: error.type || 'api_error',
+            statusCode: error.status || 500,
+            errorMessage: error.message
+        };
+    }
+
     let errorType = 'api_error';
     let statusCode = 500;
     let errorMessage = error.message;
@@ -315,8 +393,38 @@ app.get('/health', async (req, res) => {
             }
         });
 
+        let wbStatus = { total: 0, available: 0 };
+        try {
+            const wbProvider = providerRouter.getProvider('workbuddy');
+            if (wbProvider && typeof wbProvider.getStatus === 'function') {
+                wbStatus = wbProvider.getStatus();
+            }
+        } catch (_) {}
+
         res.json({
             status: 'ok',
+            providers: {
+                antigravity: {
+                    status: 'ok',
+                    accounts: status.total,
+                    available: status.available
+                },
+                workbuddy: {
+                    status: 'ok',
+                    accounts: wbStatus.total,
+                    available: wbStatus.available
+                }
+            },
+            legacyAntigravity: {
+                summary: status.summary,
+                counts: {
+                    total: status.total,
+                    available: status.available,
+                    rateLimited: status.rateLimited,
+                    invalid: status.invalid
+                },
+                accounts: detailedAccounts
+            },
             timestamp: new Date().toISOString(),
             latencyMs: Date.now() - start,
             summary: status.summary,
@@ -576,6 +684,7 @@ app.get('/account-limits', async (req, res) => {
                 const metadata = accountMetadataMap.get(acc.email) || {};
                 return {
                     email: acc.email,
+                    provider: 'antigravity',
                     status: acc.status,
                     error: acc.error || null,
                     // Include metadata from AccountManager (WebUI needs these)
@@ -611,6 +720,44 @@ app.get('/account-limits', async (req, res) => {
                 };
             })
         };
+
+        // Append WorkBuddy accounts with quotaSupported: false
+        try {
+            const wbProvider = providerRouter.getProvider('workbuddy');
+            if (wbProvider && typeof wbProvider.getStatus === 'function') {
+                const wbStatus = wbProvider.getStatus();
+                const wbAccounts = wbStatus.accounts || [];
+                for (const acc of wbAccounts) {
+                    responseData.accounts.push({
+                        email: acc.id,
+                        nickname: acc.nickname,
+                        uid: acc.uid,
+                        uidMasked: acc.uidMasked,
+                        enterpriseName: acc.enterpriseName,
+                        edition: acc.edition || 'unknown',
+                        editionLabel: acc.editionLabel || 'WORKBUDDY',
+                        domain: acc.domain,
+                        sourceFile: acc.sourceFile,
+                        sourceType: 'local',
+                        authFilePath: acc.authFilePath,
+                        lastModified: acc.lastModified,
+                        tokenExpiresAt: acc.tokenExpiresAt,
+                        refreshExpiresAt: acc.refreshExpiresAt,
+                        isExpired: acc.isExpired,
+                        provider: 'workbuddy',
+                        quotaSupported: false,
+                        source: 'workbuddy',
+                        enabled: acc.enabled !== false,
+                        status: acc.status || (acc.isInvalid ? 'reauth-required' : 'valid'),
+                        error: acc.invalidReason || null,
+                        lastUsed: acc.lastUsed || null,
+                        modelRateLimits: acc.modelRateLimits || {},
+                        limits: {}
+                    });
+                }
+                responseData.totalAccounts += wbAccounts.length;
+            }
+        } catch (_) {}
 
         // Optionally include usage history (for dashboard performance optimization)
         if (includeHistory) {
@@ -652,22 +799,23 @@ app.post('/refresh-token', async (req, res) => {
 
 /**
  * List models endpoint (OpenAI-compatible format)
+ * Aggregates models across all active providers (Antigravity & WorkBuddy)
  */
 app.get('/v1/models', async (req, res) => {
     try {
         await ensureInitialized();
-        const { account } = accountManager.selectAccount();
-        if (!account) {
-            return res.status(503).json({
-                type: 'error',
-                error: {
-                    type: 'api_error',
-                    message: 'No accounts available'
-                }
-            });
+        let token = null;
+        try {
+            const { account } = accountManager.selectAccount();
+            if (account) {
+                token = await accountManager.getTokenForAccount(account);
+            }
+        } catch (_) {
+            // Antigravity account token fetch may fail if no Antigravity accounts exist,
+            // but WorkBuddy models should still be listed!
         }
-        const token = await accountManager.getTokenForAccount(account);
-        const models = await listModels(token);
+
+        const models = await providerRouter.listModels({ token, accountManager });
         res.json(models);
     } catch (error) {
         logger.error('[API] Error listing models:', error);
@@ -683,16 +831,24 @@ app.get('/v1/models', async (req, res) => {
 
 /**
  * Count tokens endpoint - Anthropic Messages API compatible
- * Uses local tokenization with official tokenizers (@anthropic-ai/tokenizer for Claude, @lenml/tokenizer-gemini for Gemini)
+ * Uses conservative local estimation to maintain compatibility with Claude Code CLI
  */
 app.post('/v1/messages/count_tokens', (req, res) => {
-    res.status(501).json({
-        type: 'error',
-        error: {
-            type: 'not_implemented',
-            message: 'Token counting is not implemented. Use /v1/messages with max_tokens or configure your client to skip token counting.'
-        }
-    });
+    try {
+        const inputTokens = estimateTokens(req.body);
+        res.json({
+            input_tokens: inputTokens
+        });
+    } catch (error) {
+        logger.error('[API] Error estimating tokens:', error);
+        res.status(400).json({
+            type: 'error',
+            error: {
+                type: 'invalid_request_error',
+                message: error.message
+            }
+        });
+    }
 });
 
 /**
@@ -723,34 +879,41 @@ app.post('/v1/messages', async (req, res) => {
             temperature
         } = req.body;
 
-        // Resolve model mapping if configured
-        let requestedModel = model || 'claude-3-5-sonnet-20241022';
-        const modelMapping = config.modelMapping || {};
-        if (modelMapping[requestedModel] && modelMapping[requestedModel].mapping) {
-            const targetModel = modelMapping[requestedModel].mapping;
-            logger.info(`[Server] Mapping model ${requestedModel} -> ${targetModel}`);
-            requestedModel = targetModel;
-        }
+        // Resolve model mapping and provider routing
+        const rawModel = model || 'claude-3-5-sonnet-20241022';
+        const resolved = providerRouter.resolveModel(rawModel);
+        const { provider, providerId, upstreamModel, fullModel } = resolved;
 
-        const modelId = requestedModel;
+        logger.info(`[Server] Request model: ${rawModel} -> [Provider:${providerId}] ${upstreamModel}`);
 
         // Validate model ID before processing
-        const { account: validationAccount } = accountManager.selectAccount();
-        if (validationAccount) {
-            const token = await accountManager.getTokenForAccount(validationAccount);
-            const projectId = validationAccount.subscription?.projectId || null;
-            const valid = await isValidModel(modelId, token, projectId);
+        if (providerId === 'antigravity') {
+            const { account: validationAccount } = accountManager.selectAccount();
+            if (validationAccount) {
+                const token = await accountManager.getTokenForAccount(validationAccount);
+                const projectId = validationAccount.subscription?.projectId || null;
+                const valid = await isValidModel(upstreamModel, token, projectId);
 
-            if (!valid) {
-                throw new Error(`invalid_request_error: Invalid model: ${modelId}. Use /v1/models to see available models.`);
+                if (!valid) {
+                    throw new Error(`invalid_request_error: Invalid model: ${upstreamModel}. Use /v1/models to see available models.`);
+                }
             }
-        }
 
-        // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.
-        // If we have some available accounts, we try them first.
-        if (accountManager.isAllRateLimited(modelId)) {
-            logger.warn(`[Server] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`);
-            accountManager.resetAllRateLimits();
+            // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.
+            if (accountManager.isAllRateLimited(upstreamModel)) {
+                logger.warn(`[Server] All accounts rate-limited for ${upstreamModel}. Resetting state for optimistic retry.`);
+                accountManager.resetAllRateLimits();
+            }
+        } else if (providerId === 'workbuddy') {
+            const valid = await provider.isValidModel(upstreamModel);
+            if (!valid) {
+                throw new Error(`invalid_request_error: Invalid model: ${rawModel}. Use /v1/models to see available models.`);
+            }
+
+            if (provider.accountManager?.isAllRateLimited(upstreamModel)) {
+                logger.warn(`[WorkBuddy] All accounts rate-limited for ${upstreamModel}. Resetting state for optimistic retry.`);
+                provider.accountManager.resetAllRateLimits();
+            }
         }
 
         // Validate required fields
@@ -771,7 +934,7 @@ app.post('/v1/messages', async (req, res) => {
 
         // Build the request object
         const request = {
-            model: modelId,
+            model: upstreamModel,
             messages,
             max_tokens: max_tokens || 4096,
             stream,
@@ -782,6 +945,19 @@ app.post('/v1/messages', async (req, res) => {
             top_p,
             top_k,
             temperature
+        };
+
+        // Setup abort controller on client disconnect
+        const abortController = new AbortController();
+        req.on('close', () => {
+            if (!res.writableEnded) {
+                abortController.abort();
+            }
+        });
+
+        const executionOptions = {
+            fallbackEnabled: FALLBACK_ENABLED,
+            signal: abortController.signal
         };
 
         logger.info(`[API] Request for model: ${request.model}, stream: ${!!stream}`);
@@ -804,10 +980,12 @@ app.post('/v1/messages', async (req, res) => {
 
             try {
                 // Initialize the generator
-                const generator = sendMessageStream(request, accountManager, FALLBACK_ENABLED);
-                
+                const generator = providerId === 'antigravity'
+                    ? provider.sendMessageStream(request, accountManager, executionOptions)
+                    : provider.sendMessageStream(request, executionOptions);
+
                 // BUFFERING STRATEGY:
-                // Pull the first event *before* sending headers. 
+                // Pull the first event *before* sending headers.
                 // If this throws, we can safely send a 4xx/5xx error JSON.
                 const firstResult = await generator.next();
 
@@ -820,7 +998,7 @@ app.post('/v1/messages', async (req, res) => {
                 res.flushHeaders();
 
                 // If the generator isn't done, send the first chunk
-                if (!firstResult.done) {
+                if (!firstResult.done && firstResult.value) {
                     res.write(`event: ${firstResult.value.type}\ndata: ${JSON.stringify(firstResult.value)}\n\n`);
                     if (res.flush) res.flush();
                 }
@@ -830,7 +1008,7 @@ app.post('/v1/messages', async (req, res) => {
                     res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
                     if (res.flush) res.flush();
                 }
-                
+
                 res.end();
 
             } catch (error) {
@@ -838,7 +1016,7 @@ app.post('/v1/messages', async (req, res) => {
                 if (!res.headersSent) {
                     logger.error('[API] Initial stream error:', error);
                     const { errorType, statusCode, errorMessage } = parseError(error);
-                    
+
                     return res.status(statusCode).json({
                         type: 'error',
                         error: {
@@ -847,7 +1025,7 @@ app.post('/v1/messages', async (req, res) => {
                         }
                     });
                 }
-                
+
                 // If headers were already sent (should only happen if error occurs mid-stream),
                 // we have to fallback to SSE error event
                 logger.error('[API] Mid-stream error:', error);
@@ -862,7 +1040,9 @@ app.post('/v1/messages', async (req, res) => {
 
         } else {
             // Handle non-streaming response
-            const response = await sendMessage(request, accountManager, FALLBACK_ENABLED);
+            const response = providerId === 'antigravity'
+                ? await provider.sendMessage(request, accountManager, executionOptions)
+                : await provider.sendMessage(request, executionOptions);
             res.json(response);
         }
 
@@ -871,9 +1051,9 @@ app.post('/v1/messages', async (req, res) => {
 
         let { errorType, statusCode, errorMessage } = parseError(error);
 
-        // For auth errors, try to refresh token
-        if (errorType === 'authentication_error') {
-            logger.warn('[API] Token might be expired, attempting refresh...');
+        // For auth errors on Antigravity, try to refresh token
+        if (errorType === 'authentication_error' && (!error?.provider || error.provider === 'antigravity')) {
+            logger.warn('[API] Antigravity token might be expired, attempting refresh...');
             try {
                 accountManager.clearProjectCache();
                 accountManager.clearTokenCache();

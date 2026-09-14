@@ -286,7 +286,7 @@ export const MODEL_FALLBACK_MAP = {
 
 // Default test models for each family (used by test suite)
 export const TEST_MODELS = {
-    claude: 'claude-sonnet-4-6',
+    claude: 'claude-opus-4-6-thinking',
     gemini: 'gemini-3.8-flash-tiered'
 };
 
@@ -316,6 +316,30 @@ export const DEFAULT_PRESETS = [
             ANTHROPIC_DEFAULT_HAIKU_MODEL: 'gemini-3.5-flash-low',
             CLAUDE_CODE_SUBAGENT_MODEL: 'gemini-3.5-flash-low',
             ENABLE_EXPERIMENTAL_MCP_CLI: 'true'
+        }
+    },
+    {
+        name: 'WorkBuddy DeepSeek',
+        config: {
+            ANTHROPIC_AUTH_TOKEN: 'test',
+            ANTHROPIC_BASE_URL: 'http://localhost:8080',
+            ANTHROPIC_MODEL: 'workbuddy/deepseek-v4-pro',
+            ANTHROPIC_DEFAULT_OPUS_MODEL: 'workbuddy/deepseek-v4-pro',
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'workbuddy/deepseek-v4-pro',
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'workbuddy/deepseek-v4-flash',
+            CLAUDE_CODE_SUBAGENT_MODEL: 'workbuddy/deepseek-v4-pro'
+        }
+    },
+    {
+        name: 'WorkBuddy GLM',
+        config: {
+            ANTHROPIC_AUTH_TOKEN: 'test',
+            ANTHROPIC_BASE_URL: 'http://localhost:8080',
+            ANTHROPIC_MODEL: 'workbuddy/glm-5.2',
+            ANTHROPIC_DEFAULT_OPUS_MODEL: 'workbuddy/glm-5.2',
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'workbuddy/glm-5.2',
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'workbuddy/glm-5.1',
+            CLAUDE_CODE_SUBAGENT_MODEL: 'workbuddy/glm-5.2'
         }
     }
 ];

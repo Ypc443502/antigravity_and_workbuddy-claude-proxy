@@ -1,8 +1,15 @@
 # CLAUDE.md
 
-Node.js proxy that exposes an Anthropic-compatible API backed by Google's Cloud Code service, letting Claude Code CLI use Gemini (and Claude) models via Google accounts with multi-account quota management.
+Node.js proxy that exposes an Anthropic-compatible API backed by Google's Cloud Code service (Antigravity) and Tencent's WorkBuddy service (Copilot), letting Claude Code CLI use Gemini, Claude, DeepSeek, GLM, and Kimi models with multi-account quota and credential management.
 
-Request flow: `Claude Code CLI → Express (server.js) → CloudCode client → Antigravity Cloud Code API`
+Request flow: `Claude Code CLI → Express (server.js) → Provider Router → Antigravity / WorkBuddy Provider → Upstream API`
+
+## Providers & Model Routing
+
+- **Antigravity Provider**: Backed by Google Cloud Code (`antigravity/*` or unprefixed models like `claude-sonnet-4-6`, `gemini-3.1-pro-high`).
+- **WorkBuddy Provider**: Backed by Tencent WorkBuddy / Copilot (`workbuddy/*` models like `workbuddy/deepseek-v4-pro`, `workbuddy/glm-5.2`, `workbuddy/kimi-k2.7`).
+- **Model Resolution**: `config.modelMapping` aliases resolved first, then prefix routing. Unprefixed models route to Antigravity for 100% backward compatibility.
+- **WorkBuddy Auth**: Discovered automatically from `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\*.info` on Windows (also supports macOS, Linux, and `WORKBUDDY_AUTH_DIR`). Credentials auto-refresh 60s before expiry with atomic write-back.
 
 ## Commands
 
@@ -26,6 +33,7 @@ npm run accounts:list
 npm run accounts:verify
 
 npm test                             # requires server running on port 8080
+npm run test:workbuddy               # run all WorkBuddy provider unit & integration tests
 node tests/run-all.cjs <filter>      # run matching tests only
 node tests/test-strategies.cjs       # strategy unit tests (no server needed)
 ```
