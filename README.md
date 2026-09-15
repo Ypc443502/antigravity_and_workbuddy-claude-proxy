@@ -1,62 +1,64 @@
-# Antigravity Claude Proxy
+# Antigravity Claude Proxy（含 WorkBuddy 支持）
 
-[![npm version](https://img.shields.io/npm/v/antigravity-claude-proxy.svg)](https://www.npmjs.com/package/antigravity-claude-proxy)
-[![npm downloads](https://img.shields.io/npm/dm/antigravity-claude-proxy.svg)](https://www.npmjs.com/package/antigravity-claude-proxy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A proxy server that exposes an **Anthropic-compatible API** backed by **Antigravity's Cloud Code**, letting you use Claude and Gemini models with **Claude Code CLI** and **OpenClaw / ClawdBot**.
+一个代理服务器，对外暴露 **Anthropic 兼容 API**，后端接 **Antigravity 的 Cloud Code** 和
+**腾讯 WorkBuddy**，让你可以在 **Claude Code CLI** 和 **OpenClaw / ClawdBot** 里使用
+Claude、Gemini、DeepSeek、GLM、Kimi 等模型。
 
 ![Antigravity Claude Proxy Banner](images/banner.png)
 
-> **⚠️ WARNING:** Google has been issuing ToS violation bans on accounts connected to this proxy. Use at your own risk.
+> **⚠️ 警告：** Google 已对连接此代理的账号发出 ToS 违规封禁。使用风险自负。
 
 <details>
-<summary><strong>⚠️ Terms of Service Warning — Read Before Installing</strong></summary>
+<summary><strong>⚠️ 服务条款警告 —— 安装前请先阅读</strong></summary>
 
 > [!CAUTION]
-> Using this proxy may violate Google's Terms of Service. A small number of users have reported their Google accounts being **banned** or **shadow-banned** (restricted access without explicit notification).
+> 使用此代理可能违反 Google 的服务条款。已有少量用户反馈其 Google 账号被**封禁**或**影子封禁**
+> （访问受限但无明确通知）。
 >
-> **By using this proxy, you acknowledge:**
-> - This is an unofficial tool not endorsed by Google
-> - Your account may be suspended or permanently banned
-> - You assume all risks associated with using this proxy
+> **使用此代理即表示你已知晓：**
+> - 这是非官方工具，未获 Google 认可
+> - 你的账号可能被暂停或永久封禁
+> - 你自行承担使用此代理带来的一切风险
 >
-> **Recommendation:** Do not use your main account. Use a burner account instead, and optionally add it to your main account's family plan if needed.
+> **建议：** 不要用主账号，改用小号；如有需要，可将其加入主账号的家庭组。
 
 </details>
 
 ---
 
-## How It Works
+## 工作原理
 
 ```
                                                      ┌────────────────────────────┐
                                               ┌─────▶│  Antigravity Cloud Code    │
                                               │      │  (Google Cloud Code API)   │
 ┌──────────────────┐     ┌─────────────────┐  │      └────────────────────────────┘
-│   Claude Code    │────▶│ Provider Router │──┤
-│   (Anthropic     │     │  (This Proxy    │  │      ┌────────────────────────────┐
-│    Messages API) │     │   Server :8080) │  └─────▶│  WorkBuddy Copilot         │
+│   Claude Code    │────▶│   Provider      │──┤
+│   (Anthropic     │     │   Router        │  │      ┌────────────────────────────┐
+│    Messages API) │     │   (本代理 :8080) │  └─────▶│  WorkBuddy Copilot         │
 └──────────────────┘     └─────────────────┘         │  (copilot.tencent.com)     │
                                                      └────────────────────────────┘
 ```
 
-1. Receives requests in **Anthropic Messages API format** (`/v1/messages`)
-2. **Provider Router** resolves models by prefix:
-   - `workbuddy/*` (e.g. `workbuddy/deepseek-v4-pro`, `workbuddy/glm-5.2`) → **WorkBuddy Provider**
-   - `antigravity/*` or unprefixed (e.g. `claude-sonnet-4-6`, `gemini-3.1-pro-high`) → **Antigravity Provider** (100% backward compatible)
-3. For **Antigravity**: Transforms to Google Cloud Code Generative AI format and manages Google multi-account quotas
-4. For **WorkBuddy**: Transforms Anthropic messages and tool calls to native OpenAI Chat Completions, connects to `copilot.tencent.com`, streams SSE, and converts back to Anthropic event stream
-5. Automatic token refresh 60s before expiry with atomic write-back, 401 retry, and 429 rate limit failover
+1. 接收 **Anthropic Messages API 格式**的请求（`/v1/messages`）
+2. **Provider Router** 按前缀分发模型：
+   - `workbuddy/*`（如 `workbuddy/deepseek-v4-pro`、`workbuddy/glm-5.2`）→ **WorkBuddy Provider**
+   - `antigravity/*` 或不带前缀（如 `claude-sonnet-4-6`、`gemini-3.1-pro-high`）→ **Antigravity Provider**（100% 向后兼容）
+3. **Antigravity**：转换为 Google Cloud Code Generative AI 格式，并管理 Google 多账号配额
+4. **WorkBuddy**：将 Anthropic 消息与工具调用转换为原生 OpenAI Chat Completions 格式，
+   连接 `copilot.tencent.com`，流式接收 SSE，再转回 Anthropic 事件流
+5. 令牌在过期前 60 秒自动刷新（原子写回），支持 401 重试与 429 限流故障转移
 
-## Prerequisites
+## 前置要求
 
-- **Node.js** 18 or later
-- **Antigravity** installed / Google account(s) OR **WorkBuddy / CodeBuddy** logged in locally
+- **Node.js** 18 或更高版本
+- 已安装 **Antigravity**（或已添加 Google 账号），**或**本地已登录 **WorkBuddy / CodeBuddy**
 
 ---
 
-## Install & Run (TL;DR)
+## 安装与启动（速览）
 
 ```bash
 git clone -b feat/workbuddy-provider https://github.com/Ypc443502/antigravity_and_workbuddy-claude-proxy.git
@@ -65,21 +67,19 @@ npm install
 npm run acc start
 ```
 
-Four commands and the proxy is running on `http://localhost:8080`. Check it with
-`npm run acc status`, then open the web console with `npm run acc ui`.
+四条命令，代理就在 `http://localhost:8080` 跑起来了。用 `npm run acc status` 查看状态，
+用 `npm run acc ui` 打开网页控制台。
 
-**Every provider needs an account already logged in locally — the proxy reads existing
-sessions, it never creates them:**
+**每个 Provider 都需要本地已有登录好的账号 —— 代理只读取现成的会话，不会替你创建：**
 
-- **Antigravity** (Claude, Gemini) — needs Antigravity installed and signed in, or a Google
-  account added through `npm run acc accounts add`.
-- **WorkBuddy** (DeepSeek, GLM, Kimi) — needs the **WorkBuddy desktop app installed and
-  logged in**. There is no API key or login flow for it. See
-  [WorkBuddy Account Requirement](#workbuddy-account-requirement).
+- **Antigravity**（Claude、Gemini）—— 需要已安装并登录 Antigravity，或通过
+  `npm run acc accounts add` 添加 Google 账号。
+- **WorkBuddy**（DeepSeek、GLM、Kimi）—— 需要**已安装并登录 WorkBuddy 桌面端**。
+  没有 API key，也没有登录流程。详见 [WorkBuddy 账号要求](#workbuddy-账号要求)。
 
 ---
 
-## Installation
+## 安装
 
 ```bash
 git clone -b feat/workbuddy-provider https://github.com/Ypc443502/antigravity_and_workbuddy-claude-proxy.git
@@ -88,80 +88,79 @@ npm install
 npm run acc start
 ```
 
-That is the whole install. Four commands.
+整个安装过程就这四条命令。
 
-`npm run acc start` backgrounds the proxy on `http://localhost:8080` — it detaches, so your
-terminal stays free and the server keeps running after you close it.
+`npm run acc start` 会把代理放到后台运行在 `http://localhost:8080` —— 它会脱离终端，
+所以你的终端可以继续用，关闭终端后服务也不会停。
 
-> **Do not skip `npm install`.** It triggers a `prepare` hook that compiles the Tailwind
-> stylesheet (`public/css/style.css`). Without it the web console loads unstyled.
+> **不要跳过 `npm install`。** 它会触发 `prepare` 钩子编译 Tailwind 样式表
+> （`public/css/style.css`）。跳过的话网页控制台会没有样式。
 
-### The `acc` command
+### `acc` 命令
 
-`acc` is the built-in CLI for managing the proxy. When you cloned the repo, reach it through
-`npm run`:
+`acc` 是管理代理的内置 CLI。克隆仓库的情况下，通过 `npm run` 调用：
 
-| Command | What it does |
+| 命令 | 作用 |
 |---|---|
-| `npm run acc start` | Start the proxy in the background |
-| `npm run acc start -- --log` | Run in the foreground with visible logs |
-| `npm run acc stop` | Shut it down |
-| `npm run acc restart` | Restart it |
-| `npm run acc status` | Check health and PID |
-| `npm run acc ui` | Open the web console |
+| `npm run acc start` | 后台启动代理 |
+| `npm run acc start -- --log` | 前台运行并显示日志 |
+| `npm run acc stop` | 关闭代理 |
+| `npm run acc restart` | 重启代理 |
+| `npm run acc status` | 查看健康状态与 PID |
+| `npm run acc ui` | 打开网页控制台 |
 
-If you would rather have bare `acc` on your PATH, link the package:
+如果你想让 `acc` 直接出现在 PATH 里，可以链接一下：
 
 ```bash
-npm link          # then: acc start, acc status, acc ui
+npm link          # 之后可直接用：acc start、acc status、acc ui
 ```
 
-### What this repo adds over the upstream npm package
+### 本仓库相比上游 npm 包多了什么
 
-This fork adds the **WorkBuddy provider**. The npm package `antigravity-claude-proxy` is
-published by the upstream author and contains **only Antigravity** — it has no `workbuddy/*`
-models and no WorkBuddy code. Use this repo if you want DeepSeek, GLM, or Kimi.
+这个 fork 增加了 **WorkBuddy Provider**。npm 上的 `antigravity-claude-proxy` 由上游作者发布，
+**只包含 Antigravity** —— 没有 `workbuddy/*` 模型，也没有相关代码。想用 DeepSeek、GLM、Kimi
+就用本仓库。
 
-| Model family | This repo | Upstream npm package |
+| 模型系列 | 本仓库 | 上游 npm 包 |
 |---|---|---|
-| Claude, Gemini (Antigravity) | ✅ | ✅ |
-| **DeepSeek, GLM, Kimi (WorkBuddy)** | ✅ | ❌ |
+| Claude、Gemini（Antigravity） | ✅ | ✅ |
+| **DeepSeek、GLM、Kimi（WorkBuddy）** | ✅ | ❌ |
 
 ---
 
-## WorkBuddy Account Requirement
+## WorkBuddy 账号要求
 
-> ⚠️ **WorkBuddy models only work if you are logged in through the WorkBuddy desktop app.**
-> There is no API key, no token, and no `acc accounts add` flow for WorkBuddy. The proxy
-> reads the session that the desktop app already created — **it cannot create one for you**.
+> ⚠️ **WorkBuddy 模型只有在 WorkBuddy 桌面端已登录的情况下才能使用。**
+> WorkBuddy 没有 API key、没有 token，也没有 `acc accounts add` 流程。代理只读取桌面端
+> 已经创建好的会话 —— **它无法替你创建**。
 
-### What this means in practice
+### 实际表现
 
-| Situation | Result |
+| 情况 | 结果 |
 |---|---|
-| WorkBuddy desktop app installed **and logged in** | `workbuddy/*` models appear in `/v1/models` |
-| App installed but **not logged in** | No `workbuddy/*` models — only Antigravity models |
-| App **not installed** | No `workbuddy/*` models — only Antigravity models |
+| 已安装 WorkBuddy 桌面端**且已登录** | `/v1/models` 中出现 `workbuddy/*` 模型 |
+| 已安装但**未登录** | 没有 `workbuddy/*` 模型，只有 Antigravity 模型 |
+| **未安装**桌面端 | 没有 `workbuddy/*` 模型，只有 Antigravity 模型 |
 
-Antigravity models work either way. WorkBuddy is strictly additive.
+Antigravity 模型在任何情况下都能用。WorkBuddy 属于纯增量。
 
-### Where the proxy looks for the session
+### 代理去哪里找会话
 
-| Platform | Auth file location |
+| 系统 | 认证文件位置 |
 |---|---|
 | Windows | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\` |
 | macOS | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/` |
 | Linux | `~/.local/share/CodeBuddyExtension/Data/Public/auth/` |
 
-Override with the `WORKBUDDY_AUTH_DIR` environment variable if your install lives elsewhere.
+如果安装位置不同，用环境变量 `WORKBUDDY_AUTH_DIR` 覆盖。
 
-### Verify it worked
+### 验证是否生效
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-Look for the `workbuddy` block with `"accounts": 1` or higher:
+查看 `workbuddy` 那一段，`"accounts"` 应大于等于 1：
 
 ```json
 "providers": {
@@ -170,143 +169,107 @@ Look for the `workbuddy` block with `"accounts": 1` or higher:
 }
 ```
 
-If `workbuddy` shows `"accounts": 0`, the app is not logged in — open the WorkBuddy desktop
-app, sign in, then restart the proxy with `npm run acc restart`.
+如果 `workbuddy` 显示 `"accounts": 0`，说明桌面端没登录 —— 打开 WorkBuddy 桌面端登录，
+然后用 `npm run acc restart` 重启代理。
 
 ---
 
-## Quick Start
+## 快速开始
 
-### 1. Start the Proxy Server
-
-**Cloned from this repo:**
+### 1. 启动代理服务器
 
 ```bash
-npm run acc start         # background process, survives terminal closure
+npm run acc start         # 后台运行，关闭终端后依然存活
 ```
 
-**Installed globally via npm:**
-
-```bash
-acc start                 # background process, survives terminal closure
-```
-
-Both do the same thing — `npm run acc` is just how you reach the same CLI when you cloned
-instead of installing globally.
-
-| Command | Description |
+| 命令 | 说明 |
 |---|---|
-| `npm run acc start` | Launch proxy in the background |
-| `npm run acc start -- --log` | Run in foreground with visible logs |
-| `npm run acc stop` | Shut the proxy down |
-| `npm run acc restart` | Restart the proxy |
-| `npm run acc status` | Check proxy health and PID |
-| `npm run acc ui` | Open the web console in your browser |
+| `npm run acc start` | 后台启动代理 |
+| `npm run acc start -- --log` | 前台运行并显示日志 |
+| `npm run acc stop` | 关闭代理 |
+| `npm run acc restart` | 重启代理 |
+| `npm run acc status` | 查看健康状态与 PID |
+| `npm run acc ui` | 打开网页控制台 |
 
-<details>
-<summary>Other ways to start</summary>
+默认端口 `8080`。想换端口：
 
 ```bash
-npm start                 # foreground, holds the terminal (Ctrl+C to stop)
-npx antigravity-claude-proxy@latest start   # upstream package, needs no clone
+PORT=3001 npm run acc start
 ```
 
-**If you installed globally** (`npm install -g antigravity-claude-proxy`), the `acc`
-command is on your PATH directly — drop the `npm run` prefix:
+### 2. 绑定账号
+
+**Antigravity** —— 选择以下任一方式授权：
+
+**方式 A：网页控制台（推荐）**
+
+代理启动后，浏览器打开 `http://localhost:8080`，进入 **Accounts** 标签页，点击 **Add Account**，
+在弹出的窗口中完成 Google OAuth 授权。
+
+> 无头 / 远程服务器：如果服务器没有浏览器，网页控制台支持「手动授权」模式。点击 Add Account 后，
+> 复制 OAuth 链接，在本地机器完成授权，再把授权码粘贴回来。
+
+**方式 B：命令行**
 
 ```bash
-acc start
-acc status
-acc ui
+# 桌面环境（会打开浏览器）
+npm run accounts:add
+
+# 无头环境（Docker / SSH）
+npm run accounts:add -- --no-browser
 ```
 
-</details>
+**方式 C：自动（Antigravity 用户）**
 
-The server launches as a **background process** on `http://localhost:8080` by default and survives terminal closure.
+如果你已安装并登录 Antigravity 应用，代理会自动检测到本机会话，无需额外配置。
 
-| Command | Description |
-| :--- | :--- |
-| `acc start` | Launch proxy in the background |
-| `acc stop` | Shut down the proxy |
-| `acc restart` | Restart the proxy |
-| `acc status` | Check proxy health and PID |
-| `acc ui` | Open the web dashboard |
-| `acc start --log` | Run in foreground with visible logs |
+**WorkBuddy** —— 不需要在代理这边做任何操作。只要 WorkBuddy 桌面端已登录，代理会自动读取。
+详见 [WorkBuddy 账号要求](#workbuddy-账号要求)。
 
-### 2. Link Account(s)
-
-Choose one of the following methods to authorize the proxy:
-
-#### **Method A: Web Dashboard (Recommended)**
-
-1. With the proxy running, open `http://localhost:8080` in your browser.
-2. Navigate to the **Accounts** tab and click **Add Account**.
-3. Complete the Google OAuth authorization in the popup window.
-
-> **Headless/Remote Servers**: If running on a server without a browser, the WebUI supports a "Manual Authorization" mode. After clicking "Add Account", you can copy the OAuth URL, complete authorization on your local machine, and paste the authorization code back.
-
-#### **Method B: CLI (Desktop or Headless)**
-
-If you prefer the terminal or are on a remote server:
+### 3. 验证是否正常
 
 ```bash
-# Desktop (opens browser)
-antigravity-claude-proxy accounts add
-
-# Headless (Docker/SSH)
-antigravity-claude-proxy accounts add --no-browser
-```
-
-> For full CLI account management options, run `antigravity-claude-proxy accounts --help`.
-
-#### **Method C: Automatic (Antigravity Users)**
-
-If you have the **Antigravity** app installed and logged in, the proxy will automatically detect your local session. No additional setup is required.
-
-To use a custom port:
-
-```bash
-PORT=3001 antigravity-claude-proxy start
-```
-
-### 3. Verify It's Working
-
-```bash
-# Health check
+# 健康检查
 curl http://localhost:8080/health
 
-# Check account status and quota limits
+# 查看账号状态与配额
 curl "http://localhost:8080/account-limits?format=table"
+
+# 查看当前可用的模型列表
+curl http://localhost:8080/v1/models
 ```
 
 ---
 
-## Using with Claude Code CLI
+## 配合 Claude Code CLI 使用
 
-### Configure Claude Code
+### 配置 Claude Code
 
-You can configure these settings in two ways:
+有两种方式：
 
-#### **Via Web Console (Recommended)**
+**通过网页控制台（推荐）**
 
-1. Open the WebUI at `http://localhost:8080`.
-2. Go to **Settings** → **Claude CLI**.
-3. Use the **Connection Mode** toggle to switch between:
-   - **Proxy Mode**: Uses the local proxy server (Antigravity Cloud Code). Configure models, base URL, and presets here.
-   - **Paid Mode**: Uses the official Anthropic Credits directly (requires your own subscription). This hides proxy settings to prevent accidental misconfiguration.
-4. Click **Apply to Claude CLI** to save your changes.
+1. 打开 `http://localhost:8080`
+2. 进入 **Settings → Claude CLI**
+3. 用「连接模式」开关在两种模式间切换：
+   - **代理模式**：使用本地代理服务器（Antigravity Cloud Code）。在此配置模型、Base URL 和预设。
+   - **付费模式**：直连官方 Anthropic 额度（需要你自己的订阅）。此模式会隐藏代理设置，避免误配置。
+4. 点击 **Apply to Claude CLI** 保存
 
-> [!TIP] > **Configuration Precedence**: System environment variables (set in shell profile like `.zshrc`) take precedence over the `settings.json` file. If you use the Web Console to manage settings, ensure you haven't manually exported conflicting variables in your terminal.
+> **配置优先级提示：** 系统环境变量（如在 `.zshrc` 中设置的）优先级**高于** `settings.json`。
+> 如果你用网页控制台管理设置，请确认没有在终端里手动导出冲突的变量。
 
-#### **Manual Configuration**
+**手动配置**
 
-Create or edit the Claude Code settings file:
+编辑 Claude Code 配置文件：
 
-**macOS:** `~/.claude/settings.json`
-**Linux:** `~/.claude/settings.json`
-**Windows:** `%USERPROFILE%\.claude\settings.json`
+| 系统 | 路径 |
+|---|---|
+| macOS | `~/.claude/settings.json` |
+| Linux | `~/.claude/settings.json` |
+| Windows | `%USERPROFILE%\.claude\settings.json` |
 
-Add this configuration:
+使用 Claude 模型：
 
 ```json
 {
@@ -323,30 +286,45 @@ Add this configuration:
 }
 ```
 
-#### **Using with WorkBuddy Models (DeepSeek, GLM, Kimi)**
+使用 Gemini 模型：
 
-WorkBuddy models are prefixed with `workbuddy/`. Before configuring Claude Code, make sure
-the proxy has WorkBuddy credentials — the proxy reads them automatically from the locally
-logged-in WorkBuddy / CodeBuddy extension. **No separate login against the proxy is needed.**
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "test",
+    "ANTHROPIC_BASE_URL": "http://localhost:8080",
+    "ANTHROPIC_MODEL": "gemini-3.1-pro-low",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3.1-pro-low",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3.5-flash-low",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-3.5-flash-low",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "gemini-3.5-flash-low",
+    "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
+  }
+}
+```
 
-| Platform | Auth file location |
+#### 使用 WorkBuddy 模型（DeepSeek、GLM、Kimi）
+
+WorkBuddy 模型带 `workbuddy/` 前缀。配置前请确认代理已经拿到 WorkBuddy 凭据 ——
+代理会自动从本地已登录的 WorkBuddy / CodeBuddy 扩展读取，**不需要针对代理单独登录**。
+
+| 系统 | 认证文件位置 |
 |---|---|
 | Windows | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\` |
 | macOS | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/` |
 | Linux | `~/.local/share/CodeBuddyExtension/Data/Public/auth/` |
 
-Override with the `WORKBUDDY_AUTH_DIR` environment variable if your install lives elsewhere.
+如果安装位置不同，用环境变量 `WORKBUDDY_AUTH_DIR` 覆盖。
 
-> **Log in through the WorkBuddy desktop app first.** The proxy only reads the auth file —
-> it cannot create the session for you.
+> **请先通过 WorkBuddy 桌面端登录。** 代理只读取认证文件 —— 它无法替你创建会话。
 
-Check that models were discovered:
+确认模型已被发现：
 
 ```bash
 curl http://localhost:8080/v1/models
 ```
 
-Then configure `%USERPROFILE%\.claude\settings.json`:
+然后配置 `%USERPROFILE%\.claude\settings.json`：
 
 ```json
 {
@@ -365,7 +343,7 @@ Then configure `%USERPROFILE%\.claude\settings.json`:
 }
 ```
 
-Or set in your PowerShell session:
+或在 PowerShell 会话中直接设置：
 
 ```powershell
 $env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
@@ -379,32 +357,15 @@ $env:CLAUDE_CODE_SUBAGENT_MODEL="workbuddy/deepseek-v4-pro"
 claude
 ```
 
-**Model IDs are fetched live from WorkBuddy's API — not hardcoded.** The list above is a
-known-good example; run `curl http://localhost:8080/v1/models` to see what your account
-actually has access to. Available IDs depend on your WorkBuddy plan.
+**模型 ID 是从 WorkBuddy API 实时获取的，不是写死的。** 上面只是可直接使用的示例；
+运行 `curl http://localhost:8080/v1/models` 查看你的账号实际可用的模型。
+可用 ID 取决于你的 WorkBuddy 套餐。
 
-Or to use Gemini models:
+### 加载环境变量
 
-```json
-{
-  "env": {
-    "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
-    "ANTHROPIC_MODEL": "gemini-3.1-pro-low",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3.1-pro-low",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3.5-flash-low",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-3.5-flash-low",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "gemini-3.5-flash-low",
-    "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
-  }
-}
-```
+把代理设置写进 shell 配置文件：
 
-### Load Environment Variables
-
-Add the proxy settings to your shell profile:
-
-**macOS / Linux:**
+**macOS / Linux：**
 
 ```bash
 echo 'export ANTHROPIC_BASE_URL="http://localhost:8080"' >> ~/.zshrc
@@ -412,9 +373,9 @@ echo 'export ANTHROPIC_AUTH_TOKEN="test"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-> For Bash users, replace `~/.zshrc` with `~/.bashrc`
+Bash 用户把 `~/.zshrc` 换成 `~/.bashrc`。
 
-**Windows (PowerShell):**
+**Windows（PowerShell）：**
 
 ```powershell
 Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8080'"
@@ -422,54 +383,58 @@ Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 . $PROFILE
 ```
 
-**Windows (Command Prompt):**
+**Windows（命令提示符）：**
 
 ```cmd
 setx ANTHROPIC_BASE_URL "http://localhost:8080"
 setx ANTHROPIC_AUTH_TOKEN "test"
 ```
 
-Restart your terminal for changes to take effect.
+重启终端使配置生效。
 
-### Run Claude Code
+### 运行 Claude Code
 
 ```bash
-# Make sure the proxy is running first
-antigravity-claude-proxy start
+# 确认代理已启动
+npm run acc start
 
-# In another terminal, run Claude Code
+# 在另一个终端运行 Claude Code
 claude
 ```
 
-> **Note:** If Claude Code asks you to select a login method, add `"hasCompletedOnboarding": true` to `~/.claude.json` (macOS/Linux) or `%USERPROFILE%\.claude.json` (Windows), then restart your terminal and try again.
+> **提示：** 如果 Claude Code 要求你选择登录方式，在 `~/.claude.json`（macOS/Linux）或
+> `%USERPROFILE%\.claude.json`（Windows）中加入 `"hasCompletedOnboarding": true`，
+> 然后重启终端重试。
 
-### Proxy Mode vs. Paid Mode
+---
 
-Toggle in **Settings** → **Claude CLI**:
+## 代理模式 vs 付费模式
 
-| Feature | 🔌 Proxy Mode | 💳 Paid Mode |
-| :--- | :--- | :--- |
-| **Backend** | Local Server (Antigravity) | Official Anthropic Credits |
-| **Cost** | Free (Google Cloud) | Paid (Anthropic Credits) |
-| **Models** | Claude + Gemini | Claude Only |
+在 **Settings → Claude CLI** 中切换：
 
-**Paid Mode** automatically clears proxy settings so you can use your official Anthropic account directly.
+| 特性 | 🔌 代理模式 | 💳 付费模式 |
+|---|---|---|
+| 后端 | 本地服务器（Antigravity） | 官方 Anthropic 额度 |
+| 费用 | 免费（Google Cloud） | 付费（Anthropic 额度） |
+| 模型 | Claude + Gemini | 仅 Claude |
 
-### Multiple Claude Code Instances (Optional)
+付费模式会自动清除代理设置，以便你直接使用官方 Anthropic 账号。
 
-To run both the official Claude Code and Antigravity version simultaneously, add this alias:
+## 多开 Claude Code 实例（可选）
 
-**macOS / Linux:**
+想同时运行官方 Claude Code 和本代理版本，可以添加别名：
+
+**macOS / Linux：**
 
 ```bash
-# Add to ~/.zshrc or ~/.bashrc
+# 加入 ~/.zshrc 或 ~/.bashrc
 alias claude-antigravity='CLAUDE_CONFIG_DIR=~/.claude-account-antigravity ANTHROPIC_BASE_URL="http://localhost:8080" ANTHROPIC_AUTH_TOKEN="test" command claude'
 ```
 
-**Windows (PowerShell):**
+**Windows（PowerShell）：**
 
 ```powershell
-# Add to $PROFILE
+# 加入 $PROFILE
 function claude-antigravity {
     $env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\.claude-account-antigravity"
     $env:ANTHROPIC_BASE_URL = "http://localhost:8080"
@@ -478,11 +443,12 @@ function claude-antigravity {
 }
 ```
 
-Then run `claude` for official API or `claude-antigravity` for this proxy.
+之后用 `claude` 走官方 API，用 `claude-antigravity` 走本代理。
 
-### Running as a System Service (systemd)
+## 以系统服务运行（systemd）
 
-When running as a systemd service, the proxy runs under a different user (e.g. `root`), so it can't find your Claude CLI settings at `~/.claude/settings.json`. Set `CLAUDE_CONFIG_PATH` to point to the real user's `.claude` directory:
+以 systemd 服务运行时，代理会以另一个用户（如 root）身份运行，因此找不到你的 Claude CLI 配置
+`~/.claude/settings.json`。需要设置 `CLAUDE_CONFIG_PATH` 指向真实用户的 `.claude` 目录：
 
 ```ini
 # /etc/systemd/system/antigravity-proxy.service
@@ -491,44 +457,36 @@ Environment=CLAUDE_CONFIG_PATH=/home/youruser/.claude
 ExecStart=/usr/bin/node /path/to/antigravity-claude-proxy/src/index.js
 ```
 
-Without this, the WebUI's Claude CLI tab won't be able to read or write your Claude Code configuration.
+不设置的话，网页控制台的 Claude CLI 标签页将无法读写你的 Claude Code 配置。
 
 ---
 
-## Documentation
+## 文档
 
-- [Available Models](docs/models.md)
-- [Multi-Account Load Balancing](docs/load-balancing.md)
-- [Web Management Console](docs/web-console.md)
-- [Advanced Configuration](docs/configuration.md)
-- [macOS Menu Bar App](docs/menubar-app.md)
-- [OpenClaw / ClawdBot Integration](docs/openclaw.md)
-- [API Endpoints](docs/api-endpoints.md)
-- [Testing](docs/testing.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Safety, Usage, and Risk Notices](docs/safety-notices.md)
-- [Legal](docs/legal.md)
-- [Development](docs/development.md)
+- [可用模型](docs/models.md)
+- [多账号负载均衡](docs/load-balancing.md)
+- [网页管理控制台](docs/web-console.md)
+- [高级配置](docs/configuration.md)
+- [macOS 菜单栏应用](docs/menubar-app.md)
+- [OpenClaw / ClawdBot 集成](docs/openclaw.md)
+- [API 端点](docs/api-endpoints.md)
+- [测试](docs/testing.md)
+- [故障排查](docs/troubleshooting.md)
+- [安全、使用与风险提示](docs/safety-notices.md)
+- [法律](docs/legal.md)
+- [开发](docs/development.md)
 
----
+## 致谢
 
-## Credits
+本项目基于以下项目的思路与代码：
 
-This project is based on insights and code from:
+- [opencode-antigravity-auth](https://github.com/NoeFly/opencode-antigravity-auth) —— OpenCode 的 Antigravity OAuth 插件
+- [claude-code-proxy](https://github.com/1rgs/claude-code-proxy) —— 使用 LiteLLM 的 Anthropic API 代理
 
-- [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) - Antigravity OAuth plugin for OpenCode
-- [claude-code-proxy](https://github.com/1rgs/claude-code-proxy) - Anthropic API proxy using LiteLLM
-
----
-
-## License
+## 许可证
 
 MIT
 
----
-
-<a href="https://buymeacoffee.com/badrinarayanans" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50"></a>
-
-## Star History
+## Star 历史
 
 [![Star History Chart](https://star-history.dera.page/svg?repos=Ypc443502/antigravity_and_workbuddy-claude-proxy&type=date&legend=top-left&cache-control=no-cache)](https://star-history.dera.page/#Ypc443502/antigravity_and_workbuddy-claude-proxy&type=date&legend=top-left)
