@@ -56,27 +56,122 @@ A proxy server that exposes an **Anthropic-compatible API** backed by **Antigrav
 
 ---
 
+## Install & Run (TL;DR)
+
+```bash
+git clone -b feat/workbuddy-provider https://github.com/Ypc443502/antigravity_and_workbuddy-claude-proxy.git
+cd antigravity_and_workbuddy-claude-proxy
+npm install
+npm run acc start
+```
+
+Four commands and the proxy is running on `http://localhost:8080`. Check it with
+`npm run acc status`, then open the web console with `npm run acc ui`.
+
+**Every provider needs an account already logged in locally — the proxy reads existing
+sessions, it never creates them:**
+
+- **Antigravity** (Claude, Gemini) — needs Antigravity installed and signed in, or a Google
+  account added through `npm run acc accounts add`.
+- **WorkBuddy** (DeepSeek, GLM, Kimi) — needs the **WorkBuddy desktop app installed and
+  logged in**. There is no API key or login flow for it. See
+  [WorkBuddy Account Requirement](#workbuddy-account-requirement).
+
+---
+
 ## Installation
 
-### Option 1: npm (Recommended)
-
 ```bash
-# Run directly with npx (no install needed)
-npx antigravity-claude-proxy@latest start
-
-# Or install globally
-npm install -g antigravity-claude-proxy@latest
-antigravity-claude-proxy start
-```
-
-### Option 2: Clone Repository
-
-```bash
-git clone https://github.com/badri-s2001/antigravity-claude-proxy.git
-cd antigravity-claude-proxy
+git clone -b feat/workbuddy-provider https://github.com/Ypc443502/antigravity_and_workbuddy-claude-proxy.git
+cd antigravity_and_workbuddy-claude-proxy
 npm install
-npm start
+npm run acc start
 ```
+
+That is the whole install. Four commands.
+
+`npm run acc start` backgrounds the proxy on `http://localhost:8080` — it detaches, so your
+terminal stays free and the server keeps running after you close it.
+
+> **Do not skip `npm install`.** It triggers a `prepare` hook that compiles the Tailwind
+> stylesheet (`public/css/style.css`). Without it the web console loads unstyled.
+
+### The `acc` command
+
+`acc` is the built-in CLI for managing the proxy. When you cloned the repo, reach it through
+`npm run`:
+
+| Command | What it does |
+|---|---|
+| `npm run acc start` | Start the proxy in the background |
+| `npm run acc start -- --log` | Run in the foreground with visible logs |
+| `npm run acc stop` | Shut it down |
+| `npm run acc restart` | Restart it |
+| `npm run acc status` | Check health and PID |
+| `npm run acc ui` | Open the web console |
+
+If you would rather have bare `acc` on your PATH, link the package:
+
+```bash
+npm link          # then: acc start, acc status, acc ui
+```
+
+### What this repo adds over the upstream npm package
+
+This fork adds the **WorkBuddy provider**. The npm package `antigravity-claude-proxy` is
+published by the upstream author and contains **only Antigravity** — it has no `workbuddy/*`
+models and no WorkBuddy code. Use this repo if you want DeepSeek, GLM, or Kimi.
+
+| Model family | This repo | Upstream npm package |
+|---|---|---|
+| Claude, Gemini (Antigravity) | ✅ | ✅ |
+| **DeepSeek, GLM, Kimi (WorkBuddy)** | ✅ | ❌ |
+
+---
+
+## WorkBuddy Account Requirement
+
+> ⚠️ **WorkBuddy models only work if you are logged in through the WorkBuddy desktop app.**
+> There is no API key, no token, and no `acc accounts add` flow for WorkBuddy. The proxy
+> reads the session that the desktop app already created — **it cannot create one for you**.
+
+### What this means in practice
+
+| Situation | Result |
+|---|---|
+| WorkBuddy desktop app installed **and logged in** | `workbuddy/*` models appear in `/v1/models` |
+| App installed but **not logged in** | No `workbuddy/*` models — only Antigravity models |
+| App **not installed** | No `workbuddy/*` models — only Antigravity models |
+
+Antigravity models work either way. WorkBuddy is strictly additive.
+
+### Where the proxy looks for the session
+
+| Platform | Auth file location |
+|---|---|
+| Windows | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\` |
+| macOS | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/` |
+| Linux | `~/.local/share/CodeBuddyExtension/Data/Public/auth/` |
+
+Override with the `WORKBUDDY_AUTH_DIR` environment variable if your install lives elsewhere.
+
+### Verify it worked
+
+```bash
+curl http://localhost:8080/health
+```
+
+Look for the `workbuddy` block with `"accounts": 1` or higher:
+
+```json
+"providers": {
+  "antigravity": { "status": "ok", "accounts": 2, "available": 2 },
+  "workbuddy":   { "status": "ok", "accounts": 1, "available": 1 }
+}
+```
+
+If `workbuddy` shows `"accounts": 0`, the app is not logged in — open the WorkBuddy desktop
+app, sign in, then restart the proxy with `npm run acc restart`.
 
 ---
 
@@ -84,17 +179,48 @@ npm start
 
 ### 1. Start the Proxy Server
 
+**Cloned from this repo:**
+
 ```bash
-# If installed globally
-acc start
-# or: antigravity-claude-proxy start
-
-# If using npx
-npx antigravity-claude-proxy@latest start
-
-# If cloned locally
-npm start
+npm run acc start         # background process, survives terminal closure
 ```
+
+**Installed globally via npm:**
+
+```bash
+acc start                 # background process, survives terminal closure
+```
+
+Both do the same thing — `npm run acc` is just how you reach the same CLI when you cloned
+instead of installing globally.
+
+| Command | Description |
+|---|---|
+| `npm run acc start` | Launch proxy in the background |
+| `npm run acc start -- --log` | Run in foreground with visible logs |
+| `npm run acc stop` | Shut the proxy down |
+| `npm run acc restart` | Restart the proxy |
+| `npm run acc status` | Check proxy health and PID |
+| `npm run acc ui` | Open the web console in your browser |
+
+<details>
+<summary>Other ways to start</summary>
+
+```bash
+npm start                 # foreground, holds the terminal (Ctrl+C to stop)
+npx antigravity-claude-proxy@latest start   # upstream package, needs no clone
+```
+
+**If you installed globally** (`npm install -g antigravity-claude-proxy`), the `acc`
+command is on your PATH directly — drop the `npm run` prefix:
+
+```bash
+acc start
+acc status
+acc ui
+```
+
+</details>
 
 The server launches as a **background process** on `http://localhost:8080` by default and survives terminal closure.
 
@@ -199,7 +325,28 @@ Add this configuration:
 
 #### **Using with WorkBuddy Models (DeepSeek, GLM, Kimi)**
 
-To use WorkBuddy models with Claude Code CLI, configure your `%USERPROFILE%\.claude\settings.json`:
+WorkBuddy models are prefixed with `workbuddy/`. Before configuring Claude Code, make sure
+the proxy has WorkBuddy credentials — the proxy reads them automatically from the locally
+logged-in WorkBuddy / CodeBuddy extension. **No separate login against the proxy is needed.**
+
+| Platform | Auth file location |
+|---|---|
+| Windows | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\` |
+| macOS | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/` |
+| Linux | `~/.local/share/CodeBuddyExtension/Data/Public/auth/` |
+
+Override with the `WORKBUDDY_AUTH_DIR` environment variable if your install lives elsewhere.
+
+> **Log in through the WorkBuddy desktop app first.** The proxy only reads the auth file —
+> it cannot create the session for you.
+
+Check that models were discovered:
+
+```bash
+curl http://localhost:8080/v1/models
+```
+
+Then configure `%USERPROFILE%\.claude\settings.json`:
 
 ```json
 {
@@ -211,7 +358,7 @@ To use WorkBuddy models with Claude Code CLI, configure your `%USERPROFILE%\.cla
 
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "workbuddy/deepseek-v4-pro",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "workbuddy/deepseek-v4-pro",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "workbuddy/deepseek-v4-flash",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "workbuddy/deepseek-v4.1-flash",
 
     "CLAUDE_CODE_SUBAGENT_MODEL": "workbuddy/deepseek-v4-pro"
   }
@@ -226,11 +373,15 @@ $env:ANTHROPIC_AUTH_TOKEN="test"
 $env:ANTHROPIC_MODEL="workbuddy/deepseek-v4-pro"
 $env:ANTHROPIC_DEFAULT_OPUS_MODEL="workbuddy/deepseek-v4-pro"
 $env:ANTHROPIC_DEFAULT_SONNET_MODEL="workbuddy/deepseek-v4-pro"
-$env:ANTHROPIC_DEFAULT_HAIKU_MODEL="workbuddy/deepseek-v4-flash"
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL="workbuddy/deepseek-v4.1-flash"
 $env:CLAUDE_CODE_SUBAGENT_MODEL="workbuddy/deepseek-v4-pro"
 
 claude
 ```
+
+**Model IDs are fetched live from WorkBuddy's API — not hardcoded.** The list above is a
+known-good example; run `curl http://localhost:8080/v1/models` to see what your account
+actually has access to. Available IDs depend on your WorkBuddy plan.
 
 Or to use Gemini models:
 
@@ -380,4 +531,4 @@ MIT
 
 ## Star History
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=badrisnarayanan/antigravity-claude-proxy&type=date&legend=top-left&cache-control=no-cache)](https://star-history.dera.page/#badrisnarayanan/antigravity-claude-proxy&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Ypc443502/antigravity_and_workbuddy-claude-proxy&type=date&legend=top-left&cache-control=no-cache)](https://star-history.dera.page/#Ypc443502/antigravity_and_workbuddy-claude-proxy&type=date&legend=top-left)
