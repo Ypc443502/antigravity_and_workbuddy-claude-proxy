@@ -54,10 +54,12 @@ if (isFallbackEnabled) {
 export const FALLBACK_ENABLED = isFallbackEnabled;
 
 const PORT = process.env.PORT || DEFAULT_PORT;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '127.0.0.1';
 
 if (process.env.HOST) {
     logger.info(`[Startup] Using HOST environment variable: ${process.env.HOST}`);
+} else {
+    logger.info(`[Startup] Bound to loopback interface 127.0.0.1 for local security (set HOST=0.0.0.0 to allow LAN access)`);
 }
 
 // Home directory for account storage

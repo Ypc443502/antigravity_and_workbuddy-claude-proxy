@@ -3,6 +3,25 @@
  * Designed for WorkBuddy backend (copilot.tencent.com/v2/chat/completions).
  */
 
+const RESPONSE_STYLE_INSTRUCTION = 'When responding to the user, do not proactively introduce or mention your product name, client name, or runtime environment unless the user explicitly asks.';
+
+export function sanitizeSystemPromptForWorkBuddy(systemText) {
+    if (typeof systemText !== 'string') return systemText;
+
+    return systemText
+        .replace(/You are Claude Code,\s*Anthropic's official CLI for Claude\./gi, 'You are an intelligent programming assistant CLI.')
+        .replace(/You are Claude Code/gi, 'You are an intelligent programming assistant')
+        .replace(/Anthropic's official CLI for Claude/gi, 'official CLI assistant')
+        .replace(/\bClaude Code\b/g, 'Coding Assistant')
+        .replace(/\bAnthropic\b/g, 'AI');
+}
+
+function appendResponseStyleInstruction(systemText) {
+    const text = typeof systemText === 'string' ? systemText : '';
+    if (text.includes(RESPONSE_STYLE_INSTRUCTION)) return text;
+    return text ? `${text}\n\n${RESPONSE_STYLE_INSTRUCTION}` : RESPONSE_STYLE_INSTRUCTION;
+}
+
 /**
  * Convert an Anthropic tool schema to an OpenAI tool definition.
  * @param {Object} tool
@@ -221,9 +240,10 @@ export function convertAnthropicToWorkBuddy(request, upstreamModel) {
     // Process system prompt
     if (system) {
         if (typeof system === 'string') {
+            const sanitized = sanitizeSystemPromptForWorkBuddy(system);
             openAIMessages.push({
                 role: 'system',
-                content: system
+                content: appendResponseStyleInstruction(sanitized)
             });
         } else if (Array.isArray(system)) {
             const systemText = system
@@ -232,9 +252,10 @@ export function convertAnthropicToWorkBuddy(request, upstreamModel) {
                 .join('\n\n');
 
             if (systemText) {
+                const sanitized = sanitizeSystemPromptForWorkBuddy(systemText);
                 openAIMessages.push({
                     role: 'system',
-                    content: systemText
+                    content: appendResponseStyleInstruction(sanitized)
                 });
             }
         }
@@ -246,6 +267,9 @@ export function convertAnthropicToWorkBuddy(request, upstreamModel) {
         if (m.role === 'developer') {
             m.role = 'system';
         }
+        if (m.role === 'system' && typeof m.content === 'string') {
+            m.content = sanitizeSystemPromptForWorkBuddy(m.content);
+        }
     }
     openAIMessages.push(...converted);
 
@@ -254,7 +278,7 @@ export function convertAnthropicToWorkBuddy(request, upstreamModel) {
     if (openAIMessages.length === 0 || openAIMessages[0].role !== 'system') {
         openAIMessages.unshift({
             role: 'system',
-            content: 'You are a helpful assistant.'
+            content: appendResponseStyleInstruction('You are a helpful assistant.')
         });
     }
 

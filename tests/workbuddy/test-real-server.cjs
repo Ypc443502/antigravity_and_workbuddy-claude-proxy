@@ -104,9 +104,10 @@ async function runLiveTest() {
             console.log(`  → Discovered ${wbModels.length} WorkBuddy models:`);
             console.log(`    ${wbModels.slice(0, 5).map(m => m.id).join(', ')}...`);
 
-            const deepseek = wbModels.find(m => m.id === 'workbuddy/deepseek-v4-pro');
-            assert(deepseek, 'Expected workbuddy/deepseek-v4-pro in model list');
-            assert.strictEqual(deepseek.owned_by, 'workbuddy');
+            const hasKnownModel = wbModels.some(m =>
+                m.id.includes('deepseek') || m.id.includes('hy3') || m.id.includes('hy4') || m.id.includes('gpt')
+            );
+            assert(hasKnownModel, 'Expected genuine WorkBuddy models (DeepSeek, Hy, or GPT) in model list');
         });
 
         // 3. Test POST /v1/messages/count_tokens
@@ -114,7 +115,7 @@ async function runLiveTest() {
             const res = await request('/v1/messages/count_tokens', {
                 method: 'POST',
                 body: {
-                    model: 'workbuddy/deepseek-v4-pro',
+                    model: 'workbuddy/deepseek-v4.1-flash',
                     messages: [
                         { role: 'user', content: 'Hello from WorkBuddy token counter test!' }
                     ]
@@ -147,7 +148,7 @@ async function runLiveTest() {
             const res = await request('/v1/messages', {
                 method: 'POST',
                 body: {
-                    model: 'workbuddy/deepseek-v4-pro',
+                    model: 'workbuddy/deepseek-v4.1-flash',
                     max_tokens: 100,
                     messages: [
                         { role: 'user', content: '请回复五个字：WorkBuddy正常' }
@@ -157,18 +158,13 @@ async function runLiveTest() {
 
             console.log(`  → Upstream response status: HTTP ${res.status}`);
             const data = res.json();
-            if (res.status === 200) {
-                assert.strictEqual(data.type, 'message');
-                assert.strictEqual(data.role, 'assistant');
-                const replyText = data.content?.[0]?.text || '';
-                console.log(`  → Live response: "${replyText.trim()}"`);
-                console.log(`  → Usage: input_tokens=${data.usage?.input_tokens}, output_tokens=${data.usage?.output_tokens}`);
-            } else {
-                console.log(`  → Upstream returned error body:`, data);
-                // Even if remote quota or network policy triggers, verify structured Anthropic error response
-                assert(data.error);
-                assert(data.type === 'error');
-            }
+            assert.strictEqual(res.status, 200, `Expected 200 OK from live upstream, got ${res.status}: ${JSON.stringify(data)}`);
+            assert.strictEqual(data.type, 'message');
+            assert.strictEqual(data.role, 'assistant');
+            const replyText = data.content?.[0]?.text || '';
+            assert(replyText.length > 0, 'Expected non-empty reply from live WorkBuddy model');
+            console.log(`  → Live response: "${replyText.trim()}"`);
+            console.log(`  → Usage: input_tokens=${data.usage?.input_tokens}, output_tokens=${data.usage?.output_tokens}`);
         });
 
     } finally {
@@ -182,7 +178,7 @@ async function runLiveTest() {
     }
 
     console.log(`\nLive smoke tests completed: ${passed} passed, ${failed} failed`);
-    if (failed > 0) process.exit(1);
+    process.exit(failed > 0 ? 1 : 0);
 }
 
 runLiveTest().catch(e => {

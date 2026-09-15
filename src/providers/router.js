@@ -76,18 +76,6 @@ export class ProviderRouter {
         if (model.startsWith('workbuddy/')) {
             providerId = 'workbuddy';
             upstreamModel = model.substring('workbuddy/'.length);
-
-            // Backward compatibility aliases for legacy model names
-            const WORKBUDDY_DEFAULT_ALIASES = {
-                'deepseek-v4-pro': 'deepseek-v4.1-flash',
-                'deepseek-v4-flash': 'deepseek-v4.1-flash',
-                'hy4-preview': 'hy4-preview-f'
-            };
-            if (WORKBUDDY_DEFAULT_ALIASES[upstreamModel]) {
-                const aliasTarget = WORKBUDDY_DEFAULT_ALIASES[upstreamModel];
-                logger.info(`[ProviderRouter] Aligning legacy WorkBuddy alias ${upstreamModel} -> ${aliasTarget}`);
-                upstreamModel = aliasTarget;
-            }
         } else if (model.startsWith('antigravity/')) {
             providerId = 'antigravity';
             upstreamModel = model.substring('antigravity/'.length);

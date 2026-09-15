@@ -109,9 +109,11 @@ window.Components.claudeConfig = () => ({
     getAvailableModels() {
         const dataStore = Alpine.store('data');
         if (this.selectedProvider === 'workbuddy') {
-            const fromGrouped = dataStore.groupedModels?.workbuddy?.map(m => m.id);
-            if (fromGrouped && fromGrouped.length > 0) return fromGrouped;
-            return (dataStore.models || []).filter(m => m.startsWith('workbuddy/'));
+            // WorkBuddy selections are intentionally free-only. We require catalog metadata
+            // instead of guessing from model names or stale string-only model lists.
+            return (dataStore.groupedModels?.workbuddy || [])
+                .filter(m => m && m.free === true)
+                .map(m => m.id);
         } else {
             const fromGrouped = dataStore.groupedModels?.antigravity?.map(m => m.id);
             if (fromGrouped && fromGrouped.length > 0) return fromGrouped;
@@ -125,37 +127,44 @@ window.Components.claudeConfig = () => ({
      */
     switchProvider(newProvider) {
         if (this.selectedProvider === newProvider) return;
-        this.selectedProvider = newProvider;
 
         const dataStore = Alpine.store('data');
-        const wbModels = dataStore.groupedModels?.workbuddy?.map(m => m.id) ||
-            (dataStore.models || []).filter(m => m.startsWith('workbuddy/'));
         const agModels = dataStore.groupedModels?.antigravity?.map(m => m.id) ||
             (dataStore.models || []).filter(m => !m.startsWith('workbuddy/'));
 
         if (newProvider === 'workbuddy') {
-            // Helper to pick exact target or keyword fallback from actual catalog
+            const wbModels = (dataStore.groupedModels?.workbuddy || [])
+                .filter(m => m && m.free === true)
+                .map(m => m.id);
+
+            if (wbModels.length === 0) {
+                Alpine.store('global').showToast('当前 WorkBuddy catalog 没有可确认的免费模型，已阻止切换，避免误用付费模型。', 'warning', 7000);
+                return;
+            }
+
+            this.selectedProvider = newProvider;
+
+            // Pick only from models that the real catalog explicitly marks free.
             const findModel = (target, fallbacks = []) => {
                 if (wbModels.includes(target)) return target;
                 for (const fb of fallbacks) {
                     const match = wbModels.find(m => m.toLowerCase().includes(fb.toLowerCase()));
                     if (match) return match;
                 }
-                return wbModels[0] || target;
+                return '';
             };
 
-            const defModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm', 'kimi']);
-            const opusModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm']);
-            const sonnetModel = findModel('workbuddy/deepseek-v4-pro', ['deepseek', 'glm']);
-            const haikuModel = findModel('workbuddy/deepseek-v4-flash', ['flash', 'glm-5v', 'turbo']);
-            const subagentModel = findModel('workbuddy/hy3-preview-agent', ['agent', 'deepseek', 'glm']);
+            const safeModel = findModel('workbuddy/deepseek-v4.1-flash', ['deepseek-v4.1-flash', 'hy4', 'hy3', 'deepseek']) || wbModels[0];
 
-            this.config.env.ANTHROPIC_MODEL = defModel;
-            this.config.env.ANTHROPIC_DEFAULT_OPUS_MODEL = opusModel;
-            this.config.env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnetModel;
-            this.config.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haikuModel;
-            this.config.env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
+            // Claude Code may independently use these aliases. Point every alias at a verified
+            // free model so Opus/Sonnet/Haiku/subagents cannot silently switch to a paid model.
+            this.config.env.ANTHROPIC_MODEL = safeModel;
+            this.config.env.ANTHROPIC_DEFAULT_OPUS_MODEL = safeModel;
+            this.config.env.ANTHROPIC_DEFAULT_SONNET_MODEL = safeModel;
+            this.config.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = safeModel;
+            this.config.env.CLAUDE_CODE_SUBAGENT_MODEL = safeModel;
         } else {
+            this.selectedProvider = newProvider;
             // Switching to Antigravity
             const isCurrentWb = (this.config.env.ANTHROPIC_MODEL || '').startsWith('workbuddy/');
             if (isCurrentWb) {
@@ -176,6 +185,15 @@ window.Components.claudeConfig = () => ({
      */
     selectModel(field, modelId) {
         if (!this.config.env) this.config.env = {};
+
+        if (modelId.startsWith('workbuddy/')) {
+            const wbMeta = (Alpine.store('data').groupedModels?.workbuddy || [])
+                .find(m => m && m.id === modelId);
+            if (!wbMeta || wbMeta.free !== true) {
+                Alpine.store('global').showToast('已阻止选择收费或无法确认免费的 WorkBuddy 模型。', 'warning', 6000);
+                return;
+            }
+        }
 
         let finalModelId = modelId;
         // If 1M mode is enabled and it's a Gemini model, append the suffix

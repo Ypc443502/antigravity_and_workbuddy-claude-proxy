@@ -11,6 +11,10 @@ import {
     WORKBUDDY_CHAT_ENDPOINT,
     DEFAULT_REQUEST_TIMEOUT_MS
 } from './constants.js';
+import {
+    prepareChatPayload,
+    prepareInternationalChatPayload
+} from './chat-normalizer.js';
 import { parseWorkBuddyError, isAbortError } from './errors.js';
 import { logger } from '../../utils/logger.js';
 import { ProviderError } from '../provider-error.js';
@@ -95,14 +99,41 @@ export class WorkBuddyClient {
         const baseUrl = getWorkBuddyBaseUrl(domain);
         const chatEndpoint = process.env.WORKBUDDY_CHAT_ENDPOINT || `${baseUrl}/v2/chat/completions`;
 
-        logger.info(`[WorkBuddy] Sending request to ${chatEndpoint} (account: ${accountSummary.uidMasked}, model: ${payload.model})`);
+        const international = accountSummary.region === 'global'
+            || domain === 'workbuddy.ai'
+            || domain.endsWith('.workbuddy.ai');
+
+        const finalPayload = international
+            ? prepareInternationalChatPayload(payload)
+            : prepareChatPayload(payload);
+
+        // Safe diagnostics log - NO secrets, NO prompt texts, NO tokens
+        logger.info(`[WorkBuddy] outbound diagnostics: ${JSON.stringify({
+            endpoint: chatEndpoint,
+            region: accountSummary.region || (international ? 'global' : 'cn'),
+            domain: domain,
+            model: finalPayload.model,
+            stream: finalPayload.stream,
+            messageCount: finalPayload.messages?.length || 0,
+            messageRoles: finalPayload.messages?.map(m => m.role) || [],
+            firstMessageRole: finalPayload.messages?.[0]?.role,
+            hasTools: !!(finalPayload.tools?.length),
+            toolCount: finalPayload.tools?.length || 0,
+            toolChoiceType: typeof finalPayload.tool_choice,
+            toolChoiceValue: finalPayload.tool_choice,
+            maxTokens: finalPayload.max_tokens,
+            userAgent: headers['User-Agent'],
+            headerNames: Object.keys(headers)
+        })}`);
+
+        logger.info(`[WorkBuddy] Sending request to ${chatEndpoint} (account: ${accountSummary.uidMasked}, model: ${finalPayload.model})`);
 
         let response;
         try {
             response = await fetch(chatEndpoint, {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify(payload),
+                body: JSON.stringify(finalPayload),
                 signal: signal
             });
         } catch (err) {

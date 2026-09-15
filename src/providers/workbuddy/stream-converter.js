@@ -217,36 +217,26 @@ export async function* convertOpenAIToAnthropicStream(byteStream, fullModelName,
                 };
             }
 
-            // 3. Handle tool calls streaming
+            // 3. Handle tool calls streaming (buffer by index to prevent interleaved fragment lifecycle errors)
             if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+                // Close any active text block before processing tool calls
+                if (activeBlock && activeBlock.type === 'text') {
+                    yield {
+                        type: 'content_block_stop',
+                        index: activeBlock.index
+                    };
+                    activeBlock = null;
+                }
+
                 for (const tc of delta.tool_calls) {
                     const tcIndex = tc.index ?? 0;
                     let toolInfo = toolCallsMap.get(tcIndex);
 
                     if (!toolInfo) {
-                        // Close any active text block before starting a tool call
-                        if (activeBlock && activeBlock.type === 'text') {
-                            yield {
-                                type: 'content_block_stop',
-                                index: activeBlock.index
-                            };
-                            activeBlock = null;
-                        } else if (activeBlock && activeBlock.type === 'tool_use' && activeBlock.tcIndex !== tcIndex) {
-                            yield {
-                                type: 'content_block_stop',
-                                index: activeBlock.index
-                            };
-                            activeBlock = null;
-                        }
-
-                        const blockIndex = currentBlockIndex++;
                         toolInfo = {
                             id: tc.id || `call_${crypto.randomBytes(8).toString('hex')}`,
                             name: tc.function?.name || '',
-                            arguments: '',
-                            blockIndex: blockIndex,
-                            started: false,
-                            tcIndex: tcIndex
+                            argumentChunks: []
                         };
                         toolCallsMap.set(tcIndex, toolInfo);
                     } else {
@@ -254,46 +244,55 @@ export async function* convertOpenAIToAnthropicStream(byteStream, fullModelName,
                         if (tc.function?.name) toolInfo.name = tc.function.name;
                     }
 
-                    // Emit content_block_start if not yet emitted
-                    if (!toolInfo.started) {
-                        yield {
-                            type: 'content_block_start',
-                            index: toolInfo.blockIndex,
-                            content_block: {
-                                type: 'tool_use',
-                                id: toolInfo.id,
-                                name: toolInfo.name,
-                                input: {}
-                            }
-                        };
-                        toolInfo.started = true;
-                        activeBlock = { type: 'tool_use', index: toolInfo.blockIndex, tcIndex: tcIndex };
-                    }
-
-                    // Stream partial argument json
                     if (tc.function?.arguments) {
-                        toolInfo.arguments += tc.function.arguments;
-                        yield {
-                            type: 'content_block_delta',
-                            index: toolInfo.blockIndex,
-                            delta: {
-                                type: 'input_json_delta',
-                                partial_json: tc.function.arguments
-                            }
-                        };
+                        toolInfo.argumentChunks.push(tc.function.arguments);
                     }
                 }
             }
         }
     }
 
-    // End of stream cleanup: close active block if still open
+    // End of stream cleanup: close active text block if still open
     if (activeBlock) {
         yield {
             type: 'content_block_stop',
             index: activeBlock.index
         };
         activeBlock = null;
+    }
+
+    // Sequentially emit all buffered tool calls (strictly compliant Anthropic block lifecycle)
+    if (toolCallsMap.size > 0) {
+        const sortedTools = Array.from(toolCallsMap.entries()).sort((a, b) => a[0] - b[0]);
+        for (const [_, tool] of sortedTools) {
+            const blockIndex = currentBlockIndex++;
+            yield {
+                type: 'content_block_start',
+                index: blockIndex,
+                content_block: {
+                    type: 'tool_use',
+                    id: tool.id,
+                    name: tool.name,
+                    input: {}
+                }
+            };
+
+            for (const chunk of tool.argumentChunks) {
+                yield {
+                    type: 'content_block_delta',
+                    index: blockIndex,
+                    delta: {
+                        type: 'input_json_delta',
+                        partial_json: chunk
+                    }
+                };
+            }
+
+            yield {
+                type: 'content_block_stop',
+                index: blockIndex
+            };
+        }
     }
 
     // If stream ended without any message_start (e.g. empty response)

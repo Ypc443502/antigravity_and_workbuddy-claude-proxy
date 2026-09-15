@@ -21,9 +21,13 @@ export class WorkBuddyProvider {
      * @param {string} [options.authDir]
      * @param {string} [options.strategy]
      * @param {number} [options.requestTimeoutMs]
+     * @param {boolean} [options.freeOnly]
+     * @param {Function} [options.modelCatalogLoader]
      */
     constructor(options = {}) {
         this.options = options;
+        this.freeOnly = options.freeOnly ?? config?.providers?.workbuddy?.freeOnly ?? true;
+        this.modelCatalogLoader = options.modelCatalogLoader || listWorkBuddyModelsFormatted;
         this.accountManager = new WorkBuddyAccountManager({
             authDir: options.authDir || process.env.WORKBUDDY_AUTH_DIR || config?.providers?.workbuddy?.authDir,
             strategy: options.strategy || config?.providers?.workbuddy?.strategy || 'round-robin'
@@ -35,6 +39,42 @@ export class WorkBuddyProvider {
                 300000
         });
         this.initialized = false;
+    }
+
+    /**
+     * Enforce the free-model guard before any upstream chat request is sent.
+     * The decision comes from the live/cached WorkBuddy catalog metadata, never from model names.
+     *
+     * @param {string} fullModelName
+     * @param {Object} account
+     */
+    async _assertFreeModelAllowed(fullModelName, account) {
+        if (!this.freeOnly) return;
+
+        const catalog = await this.modelCatalogLoader(account);
+        const target = String(fullModelName || '').toLowerCase();
+        const model = (catalog.data || []).find(item => String(item.id || '').toLowerCase() === target);
+
+        if (!model) {
+            throw new ProviderError({
+                provider: 'workbuddy',
+                status: 400,
+                type: 'invalid_request_error',
+                code: 'workbuddy_free_only_unverified',
+                message: `WorkBuddy free-only protection cannot verify ${fullModelName} as a free model from the current catalog. Request blocked.`
+            });
+        }
+
+        if (model.free !== true) {
+            const credits = model.credits || 'unknown rate';
+            throw new ProviderError({
+                provider: 'workbuddy',
+                status: 400,
+                type: 'invalid_request_error',
+                code: 'workbuddy_paid_model_blocked',
+                message: `WorkBuddy free-only protection blocked paid model ${fullModelName} (${credits}). Choose a model marked free in the current catalog.`
+            });
+        }
     }
 
     /**
@@ -98,6 +138,7 @@ export class WorkBuddyProvider {
                     this.accountManager.resetAllRateLimits();
                     const retrySelect = this.accountManager.selectAccount(upstreamModel);
                     if (retrySelect.account) {
+                        await this._assertFreeModelAllowed(fullModelName, retrySelect.account);
                         return await this._executeSendMessage(request, retrySelect.account, upstreamModel, fullModelName, exposeReasoning, options);
                     }
                 }
@@ -110,10 +151,14 @@ export class WorkBuddyProvider {
             }
 
             try {
+                await this._assertFreeModelAllowed(fullModelName, account);
                 return await this._executeSendMessage(request, account, upstreamModel, fullModelName, exposeReasoning, options);
             } catch (err) {
                 lastError = err;
                 if (err instanceof ProviderError) {
+                    if (err.type === 'insufficient_quota_error') {
+                        throw err;
+                    }
                     if (err.status === 429) {
                         this.accountManager.markRateLimited(account.id, upstreamModel, err.retryAfterMs || 30000);
                         logger.warn(`[WorkBuddy] Account ${account.uidMasked} rate limited. Trying next account...`);
@@ -205,6 +250,7 @@ export class WorkBuddyProvider {
             }
 
             try {
+                await this._assertFreeModelAllowed(fullModelName, selectedAccount);
                 const openAIPayload = convertAnthropicToWorkBuddy(request, upstreamModel);
                 byteStream = await this.client.sendChatCompletionStream(
                     openAIPayload,
@@ -216,6 +262,9 @@ export class WorkBuddyProvider {
             } catch (err) {
                 lastError = err;
                 if (err instanceof ProviderError) {
+                    if (err.type === 'insufficient_quota_error') {
+                        throw err;
+                    }
                     if (err.status === 429) {
                         this.accountManager.markRateLimited(selectedAccount.id, upstreamModel, err.retryAfterMs || 30000);
                         logger.warn(`[WorkBuddy] Account ${selectedAccount.uidMasked} rate-limited on stream init. Trying next account...`);

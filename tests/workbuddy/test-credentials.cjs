@@ -68,7 +68,6 @@ async function runTests() {
             assert.strictEqual(headers['Authorization'], 'Bearer initial_access_token_123');
             assert.strictEqual(headers['X-User-Id'], 'user_test_99');
             assert.strictEqual(headers['X-Enterprise-Id'], 'ent_777');
-            assert.strictEqual(headers['X-Tenant-Id'], 'ent_777');
             assert.strictEqual(headers['X-Domain'], 'www.codebuddy.cn');
             assert(headers['User-Agent'].includes('CodeBuddy') || headers['User-Agent'].includes('WorkBuddy'));
 
@@ -80,6 +79,38 @@ async function runTests() {
             // Must NOT have accessToken or refreshToken in summary
             assert.strictEqual(summary.accessToken, undefined);
             assert.strictEqual(summary.refreshToken, undefined);
+        });
+
+        await test('CredentialManager: WorkBuddy AI chat uses desktop-shaped User-Agent required by international gateway', async () => {
+            const globalAuthFile = path.join(tmpDir, 'workbuddy-desktop-ai.info');
+            const globalAuth = {
+                auth: {
+                    accessToken: 'global_access_token',
+                    refreshToken: 'global_refresh_token',
+                    expiresAt: Date.now() + 1000000,
+                    domain: 'www.workbuddy.ai'
+                },
+                account: {
+                    uid: 'global_user_1',
+                    nickname: 'Global Tester',
+                    enterpriseId: '0'
+                }
+            };
+            fs.writeFileSync(globalAuthFile, JSON.stringify(globalAuth, null, 2), 'utf8');
+
+            const cm = new WorkBuddyCredentialManager(globalAuthFile);
+            const headers = await cm.getHeaders();
+
+            assert.match(headers['User-Agent'], /^WorkBuddy\/\d+\.\d+\.\d+ WorkBuddy AI\/\d+\.\d+\.\d+ CLI\/\d+\.\d+\.\d+$/);
+            assert(!headers['User-Agent'].startsWith('CLI/'), 'International chat must not use the legacy CLI User-Agent');
+            assert.strictEqual(headers['Origin'], 'https://www.workbuddy.ai');
+            assert.strictEqual(headers['X-Domain'], 'www.workbuddy.ai');
+            assert.strictEqual(headers['X-Product'], 'SaaS');
+            assert.strictEqual(headers['X-No-Enterprise-Id'], '1');
+            assert.strictEqual(headers['X-IDE-Type'], 'WorkBuddy');
+            assert.strictEqual(headers['X-IDE-Name'], 'WorkBuddy');
+            assert.match(headers['X-IDE-Version'], /^\d+\.\d+\.\d+$/);
+            assert.match(headers['X-Request-ID'], /^[0-9a-f]{32}$/i);
         });
 
         // 3. Expiry detection

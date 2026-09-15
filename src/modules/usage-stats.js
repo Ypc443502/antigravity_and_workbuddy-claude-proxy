@@ -146,7 +146,7 @@ function setupMiddleware(app) {
     setInterval(() => {
         save();
         prune();
-    }, 60 * 1000);
+    }, 60 * 1000).unref();
 
     // Save on exit
     process.on('SIGINT', () => { save(); process.exit(); });

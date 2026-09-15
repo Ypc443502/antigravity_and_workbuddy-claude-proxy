@@ -31,8 +31,8 @@ export function parseWorkBuddyError(status, body, originalError = null) {
     }
 
     if (parsed) {
-        message = parsed.error?.message || parsed.message || parsed.msg || JSON.stringify(parsed);
-        code = parsed.error?.code || parsed.code || null;
+        code = parsed?.error?.data?.code ?? parsed?.error?.code ?? parsed?.code ?? null;
+        message = parsed?.error?.data?.msg ?? parsed?.error?.data?.message ?? parsed?.error?.message ?? parsed?.msg ?? parsed?.message ?? JSON.stringify(parsed);
         type = parsed.error?.type || type;
     }
 
@@ -98,6 +98,20 @@ export function parseWorkBuddyError(status, body, originalError = null) {
                 retryable = true;
             }
             break;
+    }
+
+    const lowerMessage = String(message || '').toLowerCase();
+    const insufficientQuota = Number(code) === 14018 ||
+        lowerMessage.includes('积分已用完') ||
+        lowerMessage.includes('积分不足') ||
+        lowerMessage.includes('credits exhausted') ||
+        lowerMessage.includes('insufficient credit') ||
+        lowerMessage.includes('out of credit');
+
+    if (insufficientQuota) {
+        type = 'insufficient_quota_error';
+        retryable = false;
+        retryAfterMs = null;
     }
 
     return new ProviderError({

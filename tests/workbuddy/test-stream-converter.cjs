@@ -175,17 +175,28 @@ async function runTests() {
         assert.strictEqual(events[6].delta.stop_reason, 'tool_use');
     });
 
-    // 5. Multiple tool calls in stream
-    await test('Stream: handles multiple tool calls at different indices', async () => {
-        async function* makeMultiToolChunks() {
-            yield 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"ToolA","arguments":"{}"}}]}}]}\n\n';
-            yield 'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c2","function":{"name":"ToolB","arguments":"{}"}}]}}]}\n\n';
-            yield 'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n';
+    // 5. Multiple tool calls in stream (including interleaved fragments)
+    await test('Stream: handles multiple tool calls at different indices with interleaved fragments', async () => {
+        async function* makeInterleavedToolChunks() {
+            // Interleaved tool 0 and tool 1 chunks
+            yield `data: ${JSON.stringify({
+                choices: [{ delta: { tool_calls: [{ index: 0, id: "call_0", function: { name: "ToolA", arguments: '{"path":' } }] } }]
+            })}\n\n`;
+            yield `data: ${JSON.stringify({
+                choices: [{ delta: { tool_calls: [{ index: 1, id: "call_1", function: { name: "ToolB", arguments: '{"count":' } }] } }]
+            })}\n\n`;
+            yield `data: ${JSON.stringify({
+                choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"foo.txt"}' } }] } }]
+            })}\n\n`;
+            yield `data: ${JSON.stringify({
+                choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: '42}' } }] } }]
+            })}\n\n`;
+            yield `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`;
             yield 'data: [DONE]\n\n';
         }
 
         const events = [];
-        for await (const event of convertOpenAIToAnthropicStream(makeMultiToolChunks(), 'workbuddy/deepseek-v4-pro')) {
+        for await (const event of convertOpenAIToAnthropicStream(makeInterleavedToolChunks(), 'workbuddy/deepseek-v4.1-flash')) {
             events.push(event);
         }
 
@@ -193,6 +204,24 @@ async function runTests() {
         assert.strictEqual(starts.length, 2);
         assert.strictEqual(starts[0].content_block.name, 'ToolA');
         assert.strictEqual(starts[1].content_block.name, 'ToolB');
+
+        // Check that block 0 opens, receives delta, and closes BEFORE block 1 opens
+        const b0StartIdx = events.findIndex(e => e.type === 'content_block_start' && e.index === 0);
+        const b0DeltaIdx = events.findIndex(e => e.type === 'content_block_delta' && e.index === 0);
+        const b0StopIdx = events.findIndex(e => e.type === 'content_block_stop' && e.index === 0);
+
+        const b1StartIdx = events.findIndex(e => e.type === 'content_block_start' && e.index === 1);
+        const b1DeltaIdx = events.findIndex(e => e.type === 'content_block_delta' && e.index === 1);
+        const b1StopIdx = events.findIndex(e => e.type === 'content_block_stop' && e.index === 1);
+
+        assert(b0StartIdx < b0DeltaIdx && b0DeltaIdx < b0StopIdx, 'Block 0 lifecycle must be start -> delta -> stop');
+        assert(b0StopIdx < b1StartIdx, 'Block 0 must close before Block 1 starts');
+        assert(b1StartIdx < b1DeltaIdx && b1DeltaIdx < b1StopIdx, 'Block 1 lifecycle must be start -> delta -> stop');
+
+        const b0Deltas = events.filter(e => e.type === 'content_block_delta' && e.index === 0).map(e => e.delta.partial_json).join('');
+        const b1Deltas = events.filter(e => e.type === 'content_block_delta' && e.index === 1).map(e => e.delta.partial_json).join('');
+        assert.strictEqual(b0Deltas, '{"path":"foo.txt"}');
+        assert.strictEqual(b1Deltas, '{"count":42}');
     });
 
     // 6. aggregateOpenAIToAnthropicMessage

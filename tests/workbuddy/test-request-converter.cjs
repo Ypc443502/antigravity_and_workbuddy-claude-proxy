@@ -163,7 +163,8 @@ async function runTests() {
         assert.strictEqual(converted.max_tokens, 1024);
         assert.strictEqual(converted.temperature, 0.5);
         assert.strictEqual(converted.messages[0].role, 'system');
-        assert.strictEqual(converted.messages[0].content, 'You are a helpful assistant.');
+        assert(converted.messages[0].content.startsWith('You are a helpful assistant.'), 'Original system prompt must be preserved');
+        assert(converted.messages[0].content.includes('do not proactively introduce or mention your product name'), 'Response identity style instruction must be appended');
         assert.strictEqual(converted.messages[1].role, 'user');
         assert.strictEqual(converted.messages[1].content, 'Hello');
         assert.strictEqual(converted.tools.length, 1);

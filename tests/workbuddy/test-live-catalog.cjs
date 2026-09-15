@@ -57,6 +57,15 @@ async function main() {
     console.log(`  Fallback Flag:     ${catalog.fallback}`);
     console.log(`  Total Models:      ${catalog.models?.length || 0}`);
 
+    // Strict assertions: must be genuine remote catalog
+    assert.strictEqual(catalog.source, 'remote', 'Catalog source must be remote, not fallback');
+    assert.strictEqual(catalog.fallback, false, 'Catalog must not be fallback');
+    assert(Array.isArray(catalog.models) && catalog.models.length > 0, 'Catalog must contain models');
+    assert(
+        catalog.models.some(x => x.id.includes('hy3') || x.id.includes('hy4') || x.id.includes('deepseek') || x.id.includes('gpt')),
+        'Catalog must contain genuine models from WorkBuddy Desktop'
+    );
+
     if (catalog.models && catalog.models.length > 0) {
         console.log('\nDiscovered Models:');
         catalog.models.forEach((m, i) => {
@@ -67,6 +76,7 @@ async function main() {
     }
 
     console.log('\n✅ Live catalog verification test finished.');
+    process.exit(0);
 }
 
 main().catch(err => {

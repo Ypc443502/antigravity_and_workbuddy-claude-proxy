@@ -93,7 +93,10 @@ const DEFAULT_CONFIG = {
             authDir: '',
             productJson: '',
             requestTimeoutMs: 300000,
-            exposeReasoning: false
+            exposeReasoning: false,
+            // Safety default: only allow models that the live WorkBuddy catalog marks as free.
+            // This prevents stale Claude Code aliases/config from accidentally calling paid models.
+            freeOnly: true
         }
     }
 };
@@ -162,6 +165,10 @@ function loadConfig() {
         if (process.env.WORKBUDDY_REQUEST_TIMEOUT_MS) {
             config.providers.workbuddy = config.providers.workbuddy || {};
             config.providers.workbuddy.requestTimeoutMs = parseInt(process.env.WORKBUDDY_REQUEST_TIMEOUT_MS, 10);
+        }
+        if (process.env.WORKBUDDY_FREE_ONLY !== undefined) {
+            config.providers.workbuddy = config.providers.workbuddy || {};
+            config.providers.workbuddy.freeOnly = process.env.WORKBUDDY_FREE_ONLY !== 'false';
         }
 
     } catch (error) {

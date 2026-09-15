@@ -187,15 +187,17 @@ document.addEventListener('alpine:init', () => {
                         antigravity: data.antigravity || [],
                         workbuddy: data.workbuddy || []
                     };
-                    // Ensure models contains all active model IDs
-                    const allIds = [
-                        ...this.groupedModels.antigravity.map(m => m.id),
-                        ...this.groupedModels.workbuddy.map(m => m.id)
+                    // Replace WorkBuddy models instead of unioning to avoid stale cached IDs
+                    const freshWbIds = this.groupedModels.workbuddy.map(m => m.id);
+                    const freshAgIds = this.groupedModels.antigravity.map(m => m.id);
+                    const antigravityModels = freshAgIds.length > 0
+                        ? freshAgIds
+                        : (this.models || []).filter(m => !m.startsWith('workbuddy/'));
+
+                    this.models = [
+                        ...antigravityModels,
+                        ...freshWbIds
                     ];
-                    if (allIds.length > 0) {
-                        const set = new Set([...this.models, ...allIds]);
-                        this.models = Array.from(set);
-                    }
                 }
             } catch (err) {
                 console.error('[DataStore] Failed to fetch grouped models:', err);

@@ -13,6 +13,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { Mutex } from 'async-mutex';
 import { fetch } from 'undici';
 import {
@@ -29,6 +30,7 @@ import {
 } from './auth-locator.js';
 import { getVariantByFilename, getVariantByDomain, regionOf } from './variants.js';
 import { detectEdition, getEditionLabel } from './edition.js';
+import { chatUserAgent, resolveAppVersion, resolveCliVersion } from './app-version.js';
 import { logger } from '../../utils/logger.js';
 import { ProviderError } from '../provider-error.js';
 
@@ -381,6 +383,19 @@ export class WorkBuddyCredentialManager {
         const enterpriseId = account?.enterpriseId ? String(account.enterpriseId) : '';
         const domain = auth?.domain || (this.variant.region === 'global' ? DEFAULT_AI_DOMAIN : DEFAULT_DOMAIN);
         const baseUrl = getWorkBuddyBaseUrl(domain);
+        const isInternational = this.variant.region === 'global'
+            || domain === 'workbuddy.ai'
+            || domain.endsWith('.workbuddy.ai');
+
+        const appVersion = resolveAppVersion();
+
+        // WorkBuddy AI international chat has a channel gate. The old
+        // CLI/CodeBuddy User-Agent is rejected with HTTP 400 / code 11128.
+        // The official desktop also appends its bundled CLI version through
+        // CLIENT_INFO_USER_AGENT_EXTENSION.
+        const userAgent = isInternational
+            ? chatUserAgent(appVersion, resolveCliVersion())
+            : 'CLI/2.63.2 CodeBuddy/2.63.2';
 
         const headers = {
             'Accept': 'application/json, text/plain, */*',
@@ -388,10 +403,19 @@ export class WorkBuddyCredentialManager {
             'X-Requested-With': 'XMLHttpRequest',
             'Origin': baseUrl,
             'Referer': `${baseUrl}/`,
-            'User-Agent': 'CLI/2.63.2 CodeBuddy/2.63.2',
+            'User-Agent': userAgent,
             'Authorization': `Bearer ${auth.accessToken}`,
             'X-Product': 'SaaS'
         };
+
+        if (isInternational) {
+            // Official WorkBuddy model requests identify the desktop client
+            // explicitly with these IDE headers.
+            headers['X-IDE-Type'] = 'WorkBuddy';
+            headers['X-IDE-Name'] = 'WorkBuddy';
+            headers['X-IDE-Version'] = appVersion;
+            headers['X-Request-ID'] = randomUUID().replace(/-/g, '');
+        }
 
         if (uid) {
             headers['X-User-Id'] = String(uid);
@@ -401,7 +425,6 @@ export class WorkBuddyCredentialManager {
 
         if (enterpriseId && enterpriseId !== '0' && enterpriseId !== 'personal') {
             headers['X-Enterprise-Id'] = enterpriseId;
-            headers['X-Tenant-Id'] = enterpriseId;
         } else {
             headers['X-No-Enterprise-Id'] = '1';
         }

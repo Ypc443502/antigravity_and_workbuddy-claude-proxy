@@ -319,27 +319,17 @@ export const DEFAULT_PRESETS = [
         }
     },
     {
-        name: 'WorkBuddy DeepSeek',
+        name: 'WorkBuddy Free',
         config: {
             ANTHROPIC_AUTH_TOKEN: 'test',
             ANTHROPIC_BASE_URL: 'http://localhost:8080',
-            ANTHROPIC_MODEL: 'workbuddy/deepseek-v4-pro',
-            ANTHROPIC_DEFAULT_OPUS_MODEL: 'workbuddy/deepseek-v4-pro',
-            ANTHROPIC_DEFAULT_SONNET_MODEL: 'workbuddy/deepseek-v4-pro',
-            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'workbuddy/deepseek-v4-flash',
-            CLAUDE_CODE_SUBAGENT_MODEL: 'workbuddy/deepseek-v4-pro'
-        }
-    },
-    {
-        name: 'WorkBuddy GLM',
-        config: {
-            ANTHROPIC_AUTH_TOKEN: 'test',
-            ANTHROPIC_BASE_URL: 'http://localhost:8080',
-            ANTHROPIC_MODEL: 'workbuddy/glm-5.2',
-            ANTHROPIC_DEFAULT_OPUS_MODEL: 'workbuddy/glm-5.2',
-            ANTHROPIC_DEFAULT_SONNET_MODEL: 'workbuddy/glm-5.2',
-            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'workbuddy/glm-5.1',
-            CLAUDE_CODE_SUBAGENT_MODEL: 'workbuddy/glm-5.2'
+            // Current free candidate. Runtime free-only protection still verifies the live
+            // catalog before any request, so an expired promotion cannot spend credits.
+            ANTHROPIC_MODEL: 'workbuddy/deepseek-v4.1-flash',
+            ANTHROPIC_DEFAULT_OPUS_MODEL: 'workbuddy/deepseek-v4.1-flash',
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'workbuddy/deepseek-v4.1-flash',
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: 'workbuddy/deepseek-v4.1-flash',
+            CLAUDE_CODE_SUBAGENT_MODEL: 'workbuddy/deepseek-v4.1-flash'
         }
     }
 ];

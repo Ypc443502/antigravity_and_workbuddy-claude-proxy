@@ -882,7 +882,8 @@ app.post('/v1/messages', async (req, res) => {
         // Resolve model mapping and provider routing
         const rawModel = model || 'claude-3-5-sonnet-20241022';
         const resolved = providerRouter.resolveModel(rawModel);
-        const { provider, providerId, upstreamModel, fullModel } = resolved;
+        const { provider, providerId, fullModel } = resolved;
+        let { upstreamModel } = resolved;
 
         logger.info(`[Server] Request model: ${rawModel} -> [Provider:${providerId}] ${upstreamModel}`);
 
@@ -905,7 +906,24 @@ app.post('/v1/messages', async (req, res) => {
                 accountManager.resetAllRateLimits();
             }
         } else if (providerId === 'workbuddy') {
-            const valid = await provider.isValidModel(upstreamModel);
+            let valid = await provider.isValidModel(upstreamModel);
+
+            // Legacy WorkBuddy aliases are only applied when the requested ID is
+            // absent from the current remote catalog and the replacement exists.
+            if (!valid) {
+                const legacyAliases = {
+                    'deepseek-v4-pro': 'deepseek-v4.1-flash',
+                    'deepseek-v4-flash': 'deepseek-v4.1-flash'
+                };
+                const aliasTarget = legacyAliases[upstreamModel];
+
+                if (aliasTarget && await provider.isValidModel(aliasTarget)) {
+                    logger.warn(`[WorkBuddy] Legacy model alias ${upstreamModel} -> ${aliasTarget}; please update configuration.`);
+                    upstreamModel = aliasTarget;
+                    valid = true;
+                }
+            }
+
             if (!valid) {
                 throw new Error(`invalid_request_error: Invalid model: ${rawModel}. Use /v1/models to see available models.`);
             }
